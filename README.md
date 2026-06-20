@@ -1,0 +1,2 @@
+# cloudflare-worker-editor
+部署在cloudflare上，通过api管理你的workers，无需dashboard对浏览器的高要求
