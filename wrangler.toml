@@ -1,0 +1,7 @@
+name = "worker-editor"
+main = "worker.js"
+compatibility_date = "2026-06-20"
+
+[vars]
+# 环境变量配置
+# SCRIPT_ID = "your-custom-script-id" # 强烈建议修改为自定义字符串
