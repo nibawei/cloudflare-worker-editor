@@ -1,6 +1,9 @@
 name = "worker-editor"
-main = "worker.js"
-compatibility_date = "2026-06-20"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[observability]
+enabled = true
 
 [vars]
 # 环境变量配置

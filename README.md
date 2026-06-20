@@ -40,11 +40,9 @@
 
 ### 一键部署到 Cloudflare
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/your-username/worker-editor)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nibawei/cloudflare-worker-editor)
 
 点击上面的按钮，一键部署到你自己的 Cloudflare 账户。
-
-- 后续操作：修改SCRIPT\_ID为随机字符串，以增强安全性。**注意：** 修改后，之前使用 LocalStorage 或 Cookie 登录的用户需要重新登录。
 
 ### 前置要求
 
@@ -85,7 +83,7 @@ wrangler deploy
 1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com)
 2. 进入 Workers & Pages
 3. 创建新的 Worker
-4. 将 `worker.js` 文件内容复制到编辑器
+4. 将 /src/index.js 文件内容复制到编辑器
 5. 保存并部署
 
 ### 配置环境变量
@@ -98,7 +96,7 @@ wrangler deploy
 
 ### 核心配置参数
 
-在 `worker.js` 文件顶部可以修改以下配置：
+在 `index.js` 文件顶部可以修改以下配置： 
 
 ```javascript
 // 服务器 ID，用于加密数据（强烈建议修改为随机字符串）
