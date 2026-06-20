@@ -1,0 +1,109 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Cloudflare Workers
+.wrangler/
+dev.vars
+*.wrangler
+.miniflare/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# Build outputs
+dist/
+build/
+.min.js
+.min.css
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+.nyc_output/
+*.lcov
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Output of 'npm pack'
+*.tgz
+
+# parcel-cache
+.parcel-cache
+
+# Temporary folders
+tmp/
+temp/
+
+# Test files (optional - uncomment if needed)
+# test/
+# tests/
+# *.test.js
+# *.spec.js
+
+# Backup files
+*.bak
+*.backup
+
+# SQLite3 generated files
+*.db
+*.sqlite
+*.sqlite3
+
+# D1 database files
+.d1/
+
+# R2 local storage
+.r2/
+
+# KV local storage
+.kv/
+
+# Secrets
+*.secret
+*.key
+*.pem
+
+# Local configuration
+.local/
