@@ -1,6 +1,6 @@
 # Cloudflare Workers 编辑器
 
-一个基于 Cloudflare Workers 的 Web 管理工具，提供完整的 Workers 开发和管理界面。支持在线编辑、部署、KV 存储管理、日志查询、资源绑定等功能。
+一个基于 Cloudflare Workers 的 Web 管理工具，提供完整的 Workers 开发和管理界面。支持在线编辑、部署、KV 存储管理、日志查询、资源绑定等功能。不同于 Cloudflare Dashboard，此编辑器对浏览器版本的要求更低，大部分现代浏览器都能正常运行。
 
 ## 目录
 
