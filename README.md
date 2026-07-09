@@ -35,6 +35,7 @@
 - 键盘快捷键支持（Ctrl+S 保存、Ctrl+L 加载等）
 - Toast 通知系统
 - 代码语法检查与错误提示
+- **账户名称智能显示**：登录时自动拉取 Cloudflare 账户名，导航栏、欢迎语、本地账户列表优先显示名称而非 Account ID，旧数据自动兼容回退显示 ID
 
 ## 快速开始
 
@@ -137,6 +138,10 @@ const DEBUG = false;
    - **导入登录** - 直接使用 API Token
    - **LocalStorage 登录** - 加密存储在浏览器本地
    - **Cookie 登录** - 使用 Cookie 存储（支持自动续期）
+
+> **账户名称支持**：登录成功后系统会自动调用 Cloudflare 账户详情接口获取账户名（name/EMAIL），以两种方式持久化：
+> - 浏览器 HttpOnly Cookie（使用 API Token 的 SHA-256 哈希派生密钥轻量加密，安全性要求不高），用于已登录页面的导航栏和欢迎语展示；
+> - 浏览器 `localStorage` 的独立 key `cf_accounts_meta`（不侵入原有 token 存储结构，完全向后兼容），用于登录页「从本地存储登录」列表优先显示账户名称；未获取到或旧数据自动回退显示 Account ID。
 
 ### 管理 Workers
 
@@ -387,7 +392,7 @@ POST /api/graphql
 
 ### 响应格式
 
-成功响应：
+成功响应（通用）：
 
 ```json
 {
@@ -395,6 +400,17 @@ POST /api/graphql
   "result": { ... },
   "errors": [],
   "messages": []
+}
+```
+
+成功响应（登录接口 POST `/login`，login_type != api）：
+
+```json
+{
+  "success": true,
+  "account_id": "<Cloudflare Account ID>",
+  "encrypted_token": "<服务端加密后的Token，可用于本地存储二次加密>",
+  "account_name": "My Team / name@example.com"   // 可选字段：账户名，用于UI展示，缺失时回退显示account_id（向后兼容）
 }
 ```
 
@@ -412,9 +428,11 @@ POST /api/graphql
 ### 认证安全
 
 - **Token 加密存储** - API Token 使用 AES-256-GCM 加密后存储
+- **账户名称加密存储** - 账户名称使用 API Token 的 SHA-256 哈希派生密钥轻量加密后写入 HttpOnly Cookie，仅服务端可解密；前端仅用于界面显示，安全性要求不高
 - **自动续期机制** - Cookie 支持自动续期，避免频繁登录
 - **时间窗口校验** - 防止时钟不同步导致的安全问题
 - **IP 绑定验证** - 续期 Token 绑定客户端 IP
+- **向后兼容的本地 Meta** - 账户名称使用独立的 `cf_accounts_meta` localStorage 存储，不影响原有 Token 存储结构，旧数据无迁移成本
 
 ### 传输安全
 

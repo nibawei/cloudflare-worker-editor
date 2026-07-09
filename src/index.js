@@ -3,16 +3,16 @@
 // 服务器id 用于加密数据
 const scriptId = '21f68f42-9bc6-45e9-84a3-9fde721cbf81'; //为保证安全，请替换为随机数
 // token免密钥登录期限(s)
-const loginPeriod = 3*60*60*24; //3天
+const loginPeriod = 3 * 60 * 60 * 24; //3天
 // 登录时间偏差窗口(s)
 const CLOCK_SKEW = 10;
 const renewal = {
-     // 续期阈值（百分比）
+    // 续期阈值（百分比）
     threshold: 0.4,
-     // 续期最大期限,密码登录超过此时间不能自动续期(s)
-    maxPeriod: 30*24*60*60,
+    // 续期最大期限,密码登录超过此时间不能自动续期(s)
+    maxPeriod: 30 * 24 * 60 * 60,
     // 自动请求续期间隔(s)
-    minInterval: 30*60
+    minInterval: 30 * 60
 };
 //=========================================
 
@@ -53,7 +53,7 @@ async function handleRequest(request, env) {
             return handleFavicon(request, url);
         }
 
-        // ===== HTTPS 强制跳转（修复替换漏洞） =====
+        // ===== HTTPS 强制跳转 =====
         if (url.protocol !== 'https:' && !DEBUG) {
             if (isApiRequest) {
                 return new Response(JSON.stringify({ error: 'HTTPS Required' }), {
@@ -119,47 +119,62 @@ async function handleRequest(request, env) {
         const tokenInfo = await getValidToken(request, cookies, serverId, tokenFromHeader, accountIdHeader);
         const logined = tokenInfo.valid;
         const accountId = tokenInfo.accountId || cookies.account_id || '';
+        let displayAccount = accountId;
+        if (logined && tokenInfo.token && cookies.account_name) {
+            try {
+                const decryptedName = await simpleDecryptWithTokenHash(decodeURIComponent(cookies.account_name), tokenInfo.token);
+                if (decryptedName) {
+                    displayAccount = decryptedName;
+                }
+            } catch (e) {
+                console.warn('Failed to decrypt account_name cookie:', e);
+                displayAccount = accountId;
+            }
+        } else {
+            console.warn('No account_name cookie found, using accountId:', accountId);
+            displayAccount = accountId;
+        }
 
         // 页面路由
         if (pathname === '/' && method === 'GET') {
-            return handleStartPage(accountId, logined);
+            return handleStartPage(displayAccount, logined);
         }
         if (pathname === '/list' && method === 'GET') {
-            return handleListPage(accountId, logined);
+            return handleListPage(displayAccount, logined);
         }
         if (pathname === '/edit' && method === 'GET') {
-            return handleEditPage(request, accountId, logined);
+            return handleEditPage(request, displayAccount, logined);
         }
         if (pathname === '/kv' && method === 'GET') {
-            return handleKVHtml(accountId, logined);
+            return handleKVHtml(displayAccount, logined);
         }
         if (pathname === '/kv/bulk' && method === 'GET') {
-            return handleKVBulkHtml(accountId, logined);
+            return handleKVBulkHtml(displayAccount, logined);
         }
-        
+
         if (pathname === '/wtc' && method === 'GET') {
-            return handleWtcPage(accountId, logined);
+            return handleWtcPage(displayAccount, logined);
         }
         if (pathname === '/binding' && method === 'GET') {
-            return handleBindingsPage(accountId, logined);
+            return handleBindingsPage(displayAccount, logined);
         }
         if (pathname === '/deployment' && method === 'GET') {
-            return handleDeploymentPage(accountId, logined);
+            return handleDeploymentPage(displayAccount, logined);
         }
         if (pathname === '/routes' && method === 'GET') {
-            return handleRoutesPage(accountId, logined);
+            return handleRoutesPage(displayAccount, logined);
         }
         if (pathname === '/setting' && method === 'GET') {
-            return handleSettingPage(accountId, logined);
+            return handleSettingPage(displayAccount, logined);
         }
         if (pathname === '/create' && method === 'GET') {
-            return handleCreatePage(accountId, logined);
+            return handleCreatePage(displayAccount, logined);
         }
         if (pathname === '/curl' && method === 'GET') {
-            return handleCurlPage(accountId, logined);
+            return handleCurlPage(displayAccount, logined);
         }
         if (pathname === '/graphql' && method === 'GET') {
-            return handleGraphQLPage(accountId, logined);
+            return handleGraphQLPage(displayAccount, logined);
         }
 
         // 未匹配任何路由
@@ -199,7 +214,7 @@ async function handleRequest(request, env) {
                 headers: { 'Content-Type': 'application/json' }
             });
         } else {
-            if(DEBUG) return errHtml(500, '服务器错误:'+ error.message);
+            if (DEBUG) return errHtml(500, '服务器错误:' + error.message);
             // 返回 HTML 错误页
             return errHtml(500, '服务器错误，请稍后再试');
         }
@@ -207,13 +222,13 @@ async function handleRequest(request, env) {
 }
 // 处理登录请求
 async function handleLoginRequest(request, serverId, cookies, method, url) {
-  if ((url.pathname === '/login' || url.pathname === '/api/login') && method === 'POST') {
-    return handleLogin(request, serverId, url, cookies);
-  }
-  if (url.pathname === '/login/renew' && method === 'GET') {
-    return checkAndRenewCookie(cookies, serverId, { requireRenewToken: true, request });
-  }
-  return new Response("Not Found", { status: 404 });
+    if ((url.pathname === '/login' || url.pathname === '/api/login') && method === 'POST') {
+        return handleLogin(request, serverId, url, cookies);
+    }
+    if (url.pathname === '/login/renew' && method === 'GET') {
+        return checkAndRenewCookie(cookies, serverId, { requireRenewToken: true, request });
+    }
+    return new Response("Not Found", { status: 404 });
 }
 // 处理api请求
 async function handleApiRequest(request, cookies, url, method, serverId) {
@@ -257,8 +272,8 @@ async function handleApiRequest(request, cookies, url, method, serverId) {
         if (url.pathname.startsWith('/api/script')) {
             return handleEditorRequest(request, accountId, token);
         }
-        if (url.pathname.startsWith('/api/kv')|| url.pathname.startsWith('/api/namespaces')) {
-            return await handleKvNamespace(request,accountId,token,url,method);
+        if (url.pathname.startsWith('/api/kv') || url.pathname.startsWith('/api/namespaces')) {
+            return await handleKvNamespace(request, accountId, token, url, method);
         }
         if (url.pathname.startsWith('/api/wtc')) {
             return await handleWtc(request, url.pathname, accountId, token);
@@ -363,49 +378,49 @@ async function handleFavicon(request, url) {
 // 首页 / 
 function handleStartPage(acc, logined) {
     const welcomeMsg = logined ?
-        `<div class="alert alert-success" style="background-color: var(--info-color); color: var(--info-text); padding: 1rem; border-radius: var(--radius); margin-bottom: 1.5rem;">欢迎回来，${escapeHtml(acc)}</div>` :
-        `<div class="alert alert-warning" style="background-color: var(--info-color); color: var(--info-text); padding: 1rem; border-radius: var(--radius); margin-bottom: 1.5rem;">点击登录按钮开始体验</div>`;
+        `<div class="alert alert-success" style="background-color: var(--info-color); color: var(--text-color); padding: 1rem; border-radius: var(--radius); margin-bottom: 1.5rem;">欢迎回来，${escapeHtml(acc)}</div>` :
+        `<div class="alert alert-warning" style="background-color: var(--info-color); color: var(--text-color); padding: 1rem; border-radius: var(--radius); margin-bottom: 1.5rem;">点击登录按钮开始体验</div>`;
 
     const features = [{
-            icon: "📝",
-            title: "在线编辑与部署 Worker",
-            desc: "创建、编辑、保存 Workers 脚本，支持语法检查"
-        },
-        {
-            icon: "🗄️",
-            title: "KV 命名空间及键值管理",
-            desc: "管理命名空间和键值对，支持批量操作与过期时间"
-        },
-        {
-            icon: "📜",
-            title: "Worker 调用日志查询",
-            desc: "实时查询调用记录，按状态、路径、国家等过滤"
-        },
-        {
-            icon: "🔗",
-            title: "资源绑定配置",
-            desc: "绑定 KV、R2、D1、Secret 等 Cloudflare 资源"
-        },
-        {
-            icon: "🔄",
-            title: "部署历史与版本回滚",
-            desc: "查看部署记录，一键回滚到任意历史版本"
-        },
-        {
-            icon: "🌐",
-            title: "域名路由配置",
-            desc: "为 Worker 绑定域名路由，支持模式匹配"
-        },
-        {
-            icon: "🧪",
-            title: "cURL 代理调试工具",
-            desc: "直接执行 Cloudflare API 的 cURL 命令"
-        },
-        {
-            icon: "📊",
-            title: "请求统计与性能图表",
-            desc: "可视化请求趋势、CPU 时间、地理分布"
-        }
+        icon: "📝",
+        title: "在线编辑与部署 Worker",
+        desc: "创建、编辑、保存 Workers 脚本，支持语法检查"
+    },
+    {
+        icon: "🗄️",
+        title: "KV 命名空间及键值管理",
+        desc: "管理命名空间和键值对，支持批量操作与过期时间"
+    },
+    {
+        icon: "📜",
+        title: "Worker 调用日志查询",
+        desc: "实时查询调用记录，按状态、路径、国家等过滤"
+    },
+    {
+        icon: "🔗",
+        title: "资源绑定配置",
+        desc: "绑定 KV、R2、D1、Secret 等 Cloudflare 资源"
+    },
+    {
+        icon: "🔄",
+        title: "部署历史与版本回滚",
+        desc: "查看部署记录，一键回滚到任意历史版本"
+    },
+    {
+        icon: "🌐",
+        title: "域名路由配置",
+        desc: "为 Worker 绑定域名路由，支持模式匹配"
+    },
+    {
+        icon: "🧪",
+        title: "cURL 代理调试工具",
+        desc: "直接执行 Cloudflare API 的 cURL 命令"
+    },
+    {
+        icon: "📊",
+        title: "请求统计与性能图表",
+        desc: "可视化请求趋势、CPU 时间、地理分布"
+    }
     ];
 
     const featuresHtml = features.map(f => `
@@ -492,9 +507,9 @@ function handleStartPage(acc, logined) {
                 <p>一个简洁的 Web 管理工具，助您轻松管理 Workers、KV、日志、路由等资源。</p>
             </div>
             <div class="btn-center">
-                ${logined 
-                    ? `<a href="/list" class="btn">进入控制台</a>` 
-                    : `<a href="/login" class="btn">登录</a>`}
+                ${logined
+            ? `<a href="/list" class="btn">进入控制台</a>`
+            : `<a href="/login" class="btn">登录</a>`}
             </div>
             <div class="features">
                 ${featuresHtml}
@@ -738,7 +753,7 @@ function getErrorTitle(code) {
 // 转义html
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
+    return str.replace(/[&<>]/g, function (m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
         if (m === '>') return '&gt;';
@@ -780,19 +795,19 @@ function buildHtmlResponse(html, account, options = {}) {
     // ---------- 辅助函数：转义 HTML 与 JS 字符串 ----------
     const escapeHtml = (str) => {
         if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
+        return str.replace(/[&<>]/g, function (m) {
             if (m === '&') return '&amp;';
             if (m === '<') return '&lt;';
             if (m === '>') return '&gt;';
             return m;
-        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function (c) {
             return c;
         });
     };
 
     const escapeJsString = (str) => {
         if (!str) return '';
-        return str.replace(/[\\'"]/g, function(m) {
+        return str.replace(/[\\'"]/g, function (m) {
             if (m === '\\') return '\\\\';
             if (m === "'") return "\\'";
             if (m === '"') return '\\"';
@@ -858,17 +873,17 @@ function buildHtmlResponse(html, account, options = {}) {
 
     // ---------- 动态生成公共脚本（包含自动续期及 401 处理）----------
     const generateCommonScript = (autoRenew, renewUrl, loginUrl, enableUnauthorizedOverlay) => {
-    const minInterval = (renewal?.minInterval || 30 * 60) * 1000;
-  // 注入配置对象（安全转义）
-  const configJson = JSON.stringify({
-    autoRenew,
-    renewUrl,
-    loginUrl,
-    enableUnauthorizedOverlay,
-    minInterval
-  });
+        const minInterval = (renewal?.minInterval || 30 * 60) * 1000;
+        // 注入配置对象（安全转义）
+        const configJson = JSON.stringify({
+            autoRenew,
+            renewUrl,
+            loginUrl,
+            enableUnauthorizedOverlay,
+            minInterval
+        });
 
-  return `
+        return `
     <script>
       (function() {
         // 续期配置（由服务端注入）
@@ -1082,7 +1097,7 @@ function buildHtmlResponse(html, account, options = {}) {
       })();
     </script>
   `;
-};
+    };
 
     // ---------- 错误覆盖层生成器（支持只显示返回）----------
     function generateErrorOverlay(code, message, redirectUrl = '/', showCloseOnly = false, homeOnly = false) {
@@ -1189,18 +1204,18 @@ function buildHtmlResponse(html, account, options = {}) {
             const overlayHtml = generateErrorOverlay(code, message, redirectUrl, showCloseOnly, homeOnly);
             finalHtml = finalHtml.replace('</body>', overlayHtml + '</body>');
         }
-        
+
         if (directlyReturn) {
             // 直接返回 HTML 字符串（不附加响应头）
             return finalHtml;
         }
-        
+
         // 合并自定义响应头
         const responseHeaders = {
             'Content-Type': 'text/html',
             ...customHeaders
         };
-        
+
         return new Response(finalHtml, {
             headers: responseHeaders
         });
@@ -1777,70 +1792,70 @@ async function handleRobotsTxt(request) {
 function generateSitemapXml(baseUrl) {
     // 定义所有需要收录的页面路径
     const pages = [{
-            path: '/',
-            priority: 1.0,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/login',
-            priority: 0.9,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/list',
-            priority: 0.9,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/edit',
-            priority: 0.8,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/kv',
-            priority: 0.8,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/wtc',
-            priority: 0.8,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/binding',
-            priority: 0.8,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/deployment',
-            priority: 0.7,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/routes',
-            priority: 0.8,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/setting',
-            priority: 0.7,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/create',
-            priority: 0.7,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/curl',
-            priority: 0.6,
-            changefreq: 'monthly'
-        },
-        {
-            path: '/graphql',
-            priority: 0.7,
-            changefreq: 'monthly'
-        }
+        path: '/',
+        priority: 1.0,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/login',
+        priority: 0.9,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/list',
+        priority: 0.9,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/edit',
+        priority: 0.8,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/kv',
+        priority: 0.8,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/wtc',
+        priority: 0.8,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/binding',
+        priority: 0.8,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/deployment',
+        priority: 0.7,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/routes',
+        priority: 0.8,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/setting',
+        priority: 0.7,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/create',
+        priority: 0.7,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/curl',
+        priority: 0.6,
+        changefreq: 'monthly'
+    },
+    {
+        path: '/graphql',
+        priority: 0.7,
+        changefreq: 'monthly'
+    }
     ];
 
     let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
@@ -1860,7 +1875,7 @@ function generateSitemapXml(baseUrl) {
 }
 // XML 转义
 function escapeXml(str) {
-    return str.replace(/[<>&]/g, function(m) {
+    return str.replace(/[<>&]/g, function (m) {
         if (m === '<') return '&lt;';
         if (m === '>') return '&gt;';
         if (m === '&') return '&amp;';
@@ -1872,10 +1887,10 @@ function escapeXml(str) {
 const COOKIE_EXPIRY_WORKER_ID = 'cookie_expiry_binding';
 // UTF-8<===>Uint8Array
 function encodeText(text) {
-  return new TextEncoder().encode(text);
+    return new TextEncoder().encode(text);
 }
 function decodeText(buffer) {
-  return new TextDecoder().decode(buffer);
+    return new TextDecoder().decode(buffer);
 }
 // arrayBuffer<===>Base64
 function arrayBufferToBase64(buffer) {
@@ -1896,22 +1911,22 @@ function base64ToArrayBuffer(base64) {
 }
 // 服务器 ID 生成
 function getScriptID(urlStr, SCRIPT_ID) {
-  const url = new URL(urlStr);
-  const domain = url.hostname;
-  const safeEnvironmentId = typeof SCRIPT_ID !== 'undefined' ? SCRIPT_ID : null;
-  const safeScriptId = typeof scriptId !== 'undefined' ? scriptId : null;
-  const randomId = safeEnvironmentId ?? safeScriptId ?? null;
-  if (randomId === null) {
-    throw new Error("请先设置 'scriptId' 常量或 'SCRIPT_ID' 环境变量");
-  }
-  const combinedData = [randomId.substring(0, 50), domain.substring(0, 50)].join('|');
-  let hash = 0;
-  for (let i = 0; i < combinedData.length; i++) {
-    const char = combinedData.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash; // 保持在 32 位整数范围内
-  }
-  return Math.abs(hash).toString(16).padStart(8, '0');
+    const url = new URL(urlStr);
+    const domain = url.hostname;
+    const safeEnvironmentId = typeof SCRIPT_ID !== 'undefined' ? SCRIPT_ID : null;
+    const safeScriptId = typeof scriptId !== 'undefined' ? scriptId : null;
+    const randomId = safeEnvironmentId ?? safeScriptId ?? null;
+    if (randomId === null) {
+        throw new Error("请先设置 'scriptId' 常量或 'SCRIPT_ID' 环境变量");
+    }
+    const combinedData = [randomId.substring(0, 50), domain.substring(0, 50)].join('|');
+    let hash = 0;
+    for (let i = 0; i < combinedData.length; i++) {
+        const char = combinedData.charCodeAt(i);
+        hash = (hash << 5) - hash + char;
+        hash = hash & hash; // 保持在 32 位整数范围内
+    }
+    return Math.abs(hash).toString(16).padStart(8, '0');
 }
 // 安全加解密函数
 async function deriveKey(serverId, identity) {
@@ -1919,16 +1934,16 @@ async function deriveKey(serverId, identity) {
  * 由 serverId 和 identity 派生 AES‑GCM 密钥（128 位）
  * 使用 SHA‑256 压缩并取前 16 字节，保证密钥唯一性且不可逆推原始 ID
  */
-  const material = encodeText(`${serverId}|${identity}`);
-  const hash = await crypto.subtle.digest('SHA-256', material);
-  const keyBytes = new Uint8Array(hash).slice(0, 16); // 128 位
-  return crypto.subtle.importKey(
-    'raw',
-    keyBytes.buffer,
-    { name: 'AES-GCM' },
-    false,
-    ['encrypt', 'decrypt']
-  );
+    const material = encodeText(`${serverId}|${identity}`);
+    const hash = await crypto.subtle.digest('SHA-256', material);
+    const keyBytes = new Uint8Array(hash).slice(0, 16); // 128 位
+    return crypto.subtle.importKey(
+        'raw',
+        keyBytes.buffer,
+        { name: 'AES-GCM' },
+        false,
+        ['encrypt', 'decrypt']
+    );
 }
 async function encrypt(plaintext, serverId, identity) {
     /**
@@ -1938,19 +1953,19 @@ async function encrypt(plaintext, serverId, identity) {
  * @param {string} identity    绑定标识（如 accountId 或 COOKIE_EXPIRY_WORKER_ID）
  * @returns {Promise<string>}  Base64 编码的 [12 bytes IV || ciphertext || 16 bytes auth tag]
  */
-  const key = await deriveKey(serverId, identity);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const data = encodeText(plaintext);
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    data
-  );
-  // encrypted 是整个 ArrayBuffer（包含密文和认证标签）
-  const combined = new Uint8Array(iv.length + encrypted.byteLength);
-  combined.set(iv, 0);
-  combined.set(new Uint8Array(encrypted), iv.length);
-  return arrayBufferToBase64(combined.buffer);
+    const key = await deriveKey(serverId, identity);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const data = encodeText(plaintext);
+    const encrypted = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        data
+    );
+    // encrypted 是整个 ArrayBuffer（包含密文和认证标签）
+    const combined = new Uint8Array(iv.length + encrypted.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(encrypted), iv.length);
+    return arrayBufferToBase64(combined.buffer);
 }
 async function decrypt(ciphertextBase64, serverId, identity) {
     /**
@@ -1960,138 +1975,191 @@ async function decrypt(ciphertextBase64, serverId, identity) {
  * @param {string} identity
  * @returns {Promise<string>} 明文
  */
-  const key = await deriveKey(serverId, identity);
-  const combined = new Uint8Array(base64ToArrayBuffer(ciphertextBase64));
-  const iv = combined.slice(0, 12);
-  const ciphertext = combined.slice(12);
-  const decrypted = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    ciphertext.buffer
-  );
-  return decodeText(decrypted);
+    const key = await deriveKey(serverId, identity);
+    const combined = new Uint8Array(base64ToArrayBuffer(ciphertextBase64));
+    const iv = combined.slice(0, 12);
+    const ciphertext = combined.slice(12);
+    const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        ciphertext.buffer
+    );
+    return decodeText(decrypted);
 }
 
 // ==================== Token 加密/解密封装 ====================
 // 为 API 返回生成加密 token（仅内层，账户绑定）
 async function generateEncryptedToken(plainToken, serverId, accountId) {
-  return encrypt(plainToken, serverId, accountId);
+    return encrypt(plainToken, serverId, accountId);
 }
 // 解密加密 token（对应前端的 encrypted_token）
 async function decryptEncryptedToken(ciphertext, serverId, accountId) {
-  return decrypt(ciphertext, serverId, accountId);
+    return decrypt(ciphertext, serverId, accountId);
 }
 // Cookie 增强加密：内层(账户绑定) → 拼接过期时间戳 → 外层(cookie 固定 ID)
 async function encryptForCookie(plainToken, serverId, accountId, expirySeconds) {
-  const inner = await encrypt(plainToken, serverId, accountId);
-  const expiryTimestamp = Date.now() + expirySeconds * 1000;
-  const payload = `${inner}|${expiryTimestamp}`;
-  return encrypt(payload, serverId, COOKIE_EXPIRY_WORKER_ID);
+    const inner = await encrypt(plainToken, serverId, accountId);
+    const expiryTimestamp = Date.now() + expirySeconds * 1000;
+    const payload = `${inner}|${expiryTimestamp}`;
+    return encrypt(payload, serverId, COOKIE_EXPIRY_WORKER_ID);
 }
 // Cookie 增强解密与过期检查
 async function decryptForCookie(outerCipher, serverId, accountId) {
-  // 尝试新格式
-  try {
-    const payload = await decrypt(outerCipher, serverId, COOKIE_EXPIRY_WORKER_ID);
-    const parts = payload.split('|');
-    if (parts.length !== 2) {
-      console.warn('Invalid cookie payload format (expected 2 parts)');
-      throw new Error('Session validation failed'); // 通用错误，不暴露格式细节
-    }
-    const innerCipher = parts[0];
-    const expiryTimestamp = parseInt(parts[1], 10);
-    if (Date.now() > expiryTimestamp + (typeof CLOCK_SKEW !== 'undefined' ? CLOCK_SKEW : 0)) {
-      console.warn('Cookie token expired');
-      if (DEBUG) throw new Error('Cookie token expired');
-      throw new Error('Session expired'); // 通用错误
-    }
-    return decrypt(innerCipher, serverId, accountId);
-  } catch (e) {
-    // 回退到旧版单层加密（兼容性）
-    console.warn('Falling back to legacy cookie decryption', e);
+    // 尝试新格式
     try {
-      return decrypt(outerCipher, serverId, accountId);
-    } catch (legacyErr) {
-      console.error('Legacy cookie decryption also failed', legacyErr);
-      if (DEBUG) throw new Error('Legacy cookie decryption also failed' + legacyErr);
-      throw new Error('Session validation failed');
+        const payload = await decrypt(outerCipher, serverId, COOKIE_EXPIRY_WORKER_ID);
+        const parts = payload.split('|');
+        if (parts.length !== 2) {
+            console.warn('Invalid cookie payload format (expected 2 parts)');
+            throw new Error('Session validation failed'); // 通用错误，不暴露格式细节
+        }
+        const innerCipher = parts[0];
+        const expiryTimestamp = parseInt(parts[1], 10);
+        if (Date.now() > expiryTimestamp + (typeof CLOCK_SKEW !== 'undefined' ? CLOCK_SKEW : 0)) {
+            console.warn('Cookie token expired');
+            if (DEBUG) throw new Error('Cookie token expired');
+            throw new Error('Session expired'); // 通用错误
+        }
+        return decrypt(innerCipher, serverId, accountId);
+    } catch (e) {
+        // 回退到旧版单层加密（兼容性）
+        console.warn('Falling back to legacy cookie decryption', e);
+        try {
+            return decrypt(outerCipher, serverId, accountId);
+        } catch (legacyErr) {
+            console.error('Legacy cookie decryption also failed', legacyErr);
+            if (DEBUG) throw new Error('Legacy cookie decryption also failed' + legacyErr);
+            throw new Error('Session validation failed');
+        }
     }
-  }
+}
+// 从 Cloudflare API 获取账户名称
+async function fetchCloudflareAccountName(token, accountId) {
+    try {
+        const response = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${accountId}`,
+            { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        if (!response.ok) {
+            console.warn('Failed to fetch account name:', response.status);
+            return null;
+        }
+        const data = await response.json();
+        if (data && data.success && data.result) {
+            return data.result.name || data.result.EMAIL || null;
+        }
+        return null;
+    } catch (e) {
+        console.warn('Error fetching account name:', e.message);
+        return null;
+    }
+}
+// 基于 token 哈希的简单加密 (安全性要求不高，使用 token SHA-256 派生密钥 XOR)
+async function simpleEncryptWithTokenHash(plaintext, token) {
+    if (!plaintext || !token) return null;
+    try {
+        const tokenHash = new Uint8Array(await crypto.subtle.digest('SHA-256', encodeText(token)));
+        const data = encodeText(plaintext);
+        const result = new Uint8Array(data.length);
+        for (let i = 0; i < data.length; i++) {
+            result[i] = data[i] ^ tokenHash[i % tokenHash.length];
+        }
+        return arrayBufferToBase64(result.buffer);
+    } catch (e) {
+        console.warn('simpleEncrypt failed:', e);
+        return null;
+    }
+}
+// 对应解密函数
+async function simpleDecryptWithTokenHash(ciphertextBase64, token) {
+    if (!ciphertextBase64 || !token) return null;
+    try {
+        const tokenHash = new Uint8Array(await crypto.subtle.digest('SHA-256', encodeText(token)));
+        const data = new Uint8Array(base64ToArrayBuffer(ciphertextBase64));
+        const result = new Uint8Array(data.length);
+        for (let i = 0; i < data.length; i++) {
+            result[i] = data[i] ^ tokenHash[i % tokenHash.length];
+        }
+        return decodeText(result.buffer);
+    } catch (e) {
+        console.warn('simpleDecrypt failed:', e);
+        return null;
+    }
 }
 // API Token 验证
 async function verifyApiToken(token, accountId) {
-  try {
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts`,
-      { headers: { 'Authorization': `Bearer ${token}` } }
-    );
-    if (!response.ok) {
-      // 记录详细错误到日志，但不返回给用户
-      let errorDetail = `HTTP ${response.status}: ${response.statusText}`;
-      try {
-        const errorData = await response.json();
-        errorDetail = errorData.errors?.[0]?.message || errorData.message || errorDetail;
-      } catch (_) {
-        const text = await response.text();
-        if (text) errorDetail = text.length > 200 ? text.substring(0, 200) + '...' : text;
-      }
-      console.error('API token validation failed:', errorDetail);
-      if (DEBUG) return { valid: false, error: 'API token validation failed:'+ errorDetail };
-      return { valid: false, error: 'API token validation failed' };
+    try {
+        const response = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts`,
+            { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        if (!response.ok) {
+            // 记录详细错误到日志，但不返回给用户
+            let errorDetail = `HTTP ${response.status}: ${response.statusText}`;
+            try {
+                const errorData = await response.json();
+                errorDetail = errorData.errors?.[0]?.message || errorData.message || errorDetail;
+            } catch (_) {
+                const text = await response.text();
+                if (text) errorDetail = text.length > 200 ? text.substring(0, 200) + '...' : text;
+            }
+            console.error('API token validation failed:', errorDetail);
+            if (DEBUG) return { valid: false, error: 'API token validation failed:' + errorDetail };
+            return { valid: false, error: 'API token validation failed' };
+        }
+        return { valid: true };
+    } catch (e) {
+        console.error('Network error during token validation:', e);
+        if (DEBUG) return { valid: false, error: 'Network error during token validation:' + e };
+        return { valid: false, error: 'Token validation service error' };
     }
-    return { valid: true };
-  } catch (e) {
-    console.error('Network error during token validation:', e);
-    if (DEBUG) return { valid: false, error: 'Network error during token validation:'+ e };
-    return { valid: false, error: 'Token validation service error' };
-  }
 }
 // 获取有效Token
 async function getValidToken(request, cookies, serverId, tokenFromHeader = null, accountIdHeader = null) {
-  let token = tokenFromHeader;
-  let accountId = cookies.account_id || accountIdHeader;
-  let isEncrypted = false;
+    let token = tokenFromHeader;
+    let accountId = cookies.account_id || accountIdHeader;
+    let isEncrypted = false;
 
-  // 1. 优先使用 Authorization 头中的 token
-  if (token) {
-    // 尝试原始 token
-    const verification = await verifyApiToken(token, accountId);
-    if (verification.valid) {
-      return { valid: true, token, accountId, isEncrypted: false };
+    // 1. 优先使用 Authorization 头中的 token
+    if (token) {
+        // 尝试原始 token
+        const verification = await verifyApiToken(token, accountId);
+        if (verification.valid) {
+            return { valid: true, token, accountId, isEncrypted: false };
+        }
+        // 尝试解密头中的 token（可能前端传了加密 token）
+        try {
+            const decrypted = await decryptEncryptedToken(token, serverId, accountId);
+            const verification2 = await verifyApiToken(decrypted, accountId);
+            if (verification2.valid) {
+                return { valid: true, token: decrypted, accountId, isEncrypted: true };
+            }
+        } catch (e) {
+            console.log('Header token decryption failed:', e);
+        }
     }
-    // 尝试解密头中的 token（可能前端传了加密 token）
-    try {
-      const decrypted = await decryptEncryptedToken(token, serverId, accountId);
-      const verification2 = await verifyApiToken(decrypted, accountId);
-      if (verification2.valid) {
-        return { valid: true, token: decrypted, accountId, isEncrypted: true };
-      }
-    } catch (e) {
-      console.log('Header token decryption failed:', e);
-    }
-  }
 
-  // 2. 从 Cookie 获取
-  if (cookies.cf_api && cookies.account_id) {
-    try {
-      // 先按增强格式解密（自动校验过期）
-      const decryptedToken = await decryptForCookie(cookies.cf_api, serverId, cookies.account_id);
-      const verification = await verifyApiToken(decryptedToken, cookies.account_id);
-      if (verification.valid) {
-        return { valid: true, token: decryptedToken, accountId: cookies.account_id, isEncrypted: true };
-      }
-    } catch (e) {
-      console.log('Cookie enhanced decrypt failed:', e);
+    // 2. 从 Cookie 获取
+    if (cookies.cf_api && cookies.account_id) {
+        try {
+            // 先按增强格式解密（自动校验过期）
+            const decryptedToken = await decryptForCookie(cookies.cf_api, serverId, cookies.account_id);
+            const verification = await verifyApiToken(decryptedToken, cookies.account_id);
+            if (verification.valid) {
+                return { valid: true, token: decryptedToken, accountId: cookies.account_id, isEncrypted: true };
+            }
+        } catch (e) {
+            console.log('Cookie enhanced decrypt failed:', e);
+        }
+        // 尝试原始 token（未加密）
+        const verification = await verifyApiToken(cookies.cf_api, cookies.account_id);
+        if (verification.valid) {
+            return { valid: true, token: cookies.cf_api, accountId: cookies.account_id, isEncrypted: false };
+        }
     }
-    // 尝试原始 token（未加密）
-    const verification = await verifyApiToken(cookies.cf_api, cookies.account_id);
-    if (verification.valid) {
-      return { valid: true, token: cookies.cf_api, accountId: cookies.account_id, isEncrypted: false };
-    }
-  }
 
-  // 通用错误消息，不暴露缺失原因细节
-  return { valid: false, error: 'No valid authentication token found' };
+    // 通用错误消息，不暴露缺失原因细节
+    return { valid: false, error: 'No valid authentication token found' };
 }
 // 登录请求处理
 async function handleLogin(input, serverId, url = '', cookies = {}) {
@@ -2099,160 +2167,183 @@ async function handleLogin(input, serverId, url = '', cookies = {}) {
  * 统一的登录处理入口
  * 支持 login_type: import / localstorage / cookie / api / internal
  */
-  try {
-    let data;
-    let inputMode;
+    try {
+        let data;
+        let inputMode;
 
-    if (input instanceof Request) {
-      data = await input.json();
-      inputMode = 'request';
-    } else if (typeof input === 'object' && input !== null) {
-      data = input;
-      inputMode = 'data';
-      if (!data.url) throw new Error('Url is needed');
-    } else {
-      throw new Error('Invalid input type');
-    }
-
-    let { account_id, login_type } = data;
-    if (!account_id || !login_type) {
-      throw new Error('Missing required fields: account_id or login_type');
-    }
-
-    let originalToken;
-    let encryptedApiToken;
-    let encryptedCookieToken;
-
-    switch (login_type) {
-      case 'import':
-        if (!data.api_token) throw new Error('API token is required for import');
-        originalToken = data.api_token;
-        break;
-
-      case 'localstorage':
-        if (!data.encrypted_token) throw new Error('Encrypted token is required for localstorage login');
-        // 这里的 encrypted_token 仍是服务器绑定加密，直接解密
-        try {
-          originalToken = await decryptEncryptedToken(data.encrypted_token, serverId, account_id);
-        } catch (decErr) {
-          throw new Error('Decryption failed in localstorage login:' + decErr );
+        if (input instanceof Request) {
+            data = await input.json();
+            inputMode = 'request';
+        } else if (typeof input === 'object' && input !== null) {
+            data = input;
+            inputMode = 'data';
+            if (!data.url) throw new Error('Url is needed');
+        } else {
+            throw new Error('Invalid input type');
         }
-        break;
 
-      case 'cookie':
-        return checkAndRenewCookie(cookies, serverId, {
-    requireRenewToken: true,
-    request: input instanceof Request ? input : null,
-    redirect: input instanceof Request ? 'list' : null,
-  });
+        let { account_id, login_type } = data;
+        if (!account_id || !login_type) {
+            throw new Error('Missing required fields: account_id or login_type');
+        }
 
-      case 'api':
-        if (!data.token) throw new Error('Token is required for api login');
-        originalToken = data.token;
-        break;
+        let originalToken;
+        let encryptedApiToken;
+        let encryptedCookieToken;
 
-      case 'internal':
-        if (inputMode !== 'data') throw new Error('Internal login type only available for direct data input');
-        if (!data.token) throw new Error('Token is required for internal login');
-        originalToken = data.token;
+        switch (login_type) {
+            case 'import':
+                if (!data.api_token) throw new Error('API token is required for import');
+                originalToken = data.api_token;
+                break;
+
+            case 'localstorage':
+                if (!data.encrypted_token) throw new Error('Encrypted token is required for localstorage login');
+                // 这里的 encrypted_token 仍是服务器绑定加密，直接解密
+                try {
+                    originalToken = await decryptEncryptedToken(data.encrypted_token, serverId, account_id);
+                } catch (decErr) {
+                    throw new Error('Decryption failed in localstorage login:' + decErr);
+                }
+                break;
+
+            case 'cookie':
+                return checkAndRenewCookie(cookies, serverId, {
+                    requireRenewToken: true,
+                    request: input instanceof Request ? input : null,
+                    redirect: input instanceof Request ? 'list' : null,
+                });
+
+            case 'api':
+                if (!data.token) throw new Error('Token is required for api login');
+                originalToken = data.token;
+                break;
+
+            case 'internal':
+                if (inputMode !== 'data') throw new Error('Internal login type only available for direct data input');
+                if (!data.token) throw new Error('Token is required for internal login');
+                originalToken = data.token;
+                encryptedApiToken = await generateEncryptedToken(originalToken, serverId, account_id);
+                return { account_id, encrypted_token: encryptedApiToken };
+
+            default:
+                throw new Error('Invalid login type: ' + login_type);
+        }
+
+        // 验证原始 token 的有效性（verifyApiToken 内部已做日志，返回通用错误）
+        const { valid, error } = await verifyApiToken(originalToken, account_id);
+        if (!valid) {
+            throw new Error('Token verification failed during login:' + error);
+        }
+
+        // 尝试获取账户名称并用 token 哈希加密（安全性要求不高）
+        let encryptedAccountName = null;
+        let rawAccountName = null;
+        try {
+            rawAccountName = await fetchCloudflareAccountName(originalToken, account_id);
+            if (rawAccountName) {
+                encryptedAccountName = await simpleEncryptWithTokenHash(rawAccountName, originalToken);
+            }
+        } catch (nameErr) {
+            console.warn('Failed to process account name during login:', nameErr);
+        }
+
+        // 生成各种加密格式
+        const expirySeconds = typeof loginPeriod !== 'undefined' ? loginPeriod : 604800; // 默认7天
+        encryptedCookieToken = await encryptForCookie(originalToken, serverId, account_id, expirySeconds);
         encryptedApiToken = await generateEncryptedToken(originalToken, serverId, account_id);
-        return { account_id, encrypted_token: encryptedApiToken };
 
-      default:
-        throw new Error('Invalid login type: ' + login_type);
-    }
+        if (inputMode === 'request') {
+            if (login_type === 'api') {
+                // api 登录只返回加密 token，不写 Cookie
+                const body = {
+                    success: true,
+                    encrypted_token: encryptedApiToken,
+                    account_id: account_id
+                };
+                if (rawAccountName) {
+                    body.account_name = rawAccountName;
+                }
+                return new Response(JSON.stringify(body), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*',
+                        'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+                        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                    }
+                });
+            } else {
+                let renewToken;
+                const clientIp = input.headers.get('CF-Connecting-IP') || '0.0.0.0';
+                const deadline = Date.now() + renewal.maxPeriod * 1000; // maxPeriod 单位为秒
+                renewToken = await generateRenewToken(account_id, clientIp, deadline, serverId);
 
-    // 验证原始 token 的有效性（verifyApiToken 内部已做日志，返回通用错误）
-    const { valid, error } = await verifyApiToken(originalToken, account_id);
-    if (!valid) {
-      throw new Error('Token verification failed during login:'+ error);
+                return createLoginResponse(account_id, encryptedApiToken, url, encryptedCookieToken, renewToken, encryptedAccountName, rawAccountName);
+            }
+        } else {
+            // 直接数据调用（internal 已提前返回，这里通常不会走到）
+            return { success: true, encrypted_token: encryptedApiToken, account_id: account_id };
+        }
+    } catch (error) {
+        // 捕获所有错误，向客户端返回通用安全消息，详细错误记录到控制台
+        console.error('Login processing error:', error);
+        if (input instanceof Request) {
+            // 根据错误类型给出合适的状态码，但消息保持通用
+            let status = 400;
+            let userMessage = 'Invalid login request';
+            if (error.message.includes('Authentication failed') || error.message.includes('session') || error.message.includes('expired')) {
+                status = 401;
+                userMessage = 'Authentication failed. Please check your credentials.';
+            } else if (error.message.includes('Missing required fields') || error.message.includes('required for')) {
+                status = 400;
+                userMessage = 'Missing required login parameters.';
+            }
+            if (DEBUG) {
+                userMessage = 'Invalid login request:' + error;
+            }
+            return new Response(JSON.stringify({ error: userMessage }), {
+                status: status,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        } else {
+            // 内部调用返回完整错误信息
+            throw new Error('Login processing failed' + error);
+        }
     }
-    
-    // 生成各种加密格式
-    const expirySeconds = typeof loginPeriod !== 'undefined' ? loginPeriod : 604800; // 默认7天
-    encryptedCookieToken = await encryptForCookie(originalToken, serverId, account_id, expirySeconds);
-    encryptedApiToken = await generateEncryptedToken(originalToken, serverId, account_id);
-    
-    if (inputMode === 'request') {
-      if (login_type === 'api') {
-        // api 登录只返回加密 token，不写 Cookie
-        return new Response(JSON.stringify({
-          success: true,
-          encrypted_token: encryptedApiToken,
-          account_id: account_id
-        }), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-          }
-        });
-      } else {
-          let renewToken;
-        const clientIp = input.headers.get('CF-Connecting-IP') || '0.0.0.0';
-  const deadline = Date.now() + renewal.maxPeriod * 1000; // maxPeriod 单位为秒
-  renewToken = await generateRenewToken(account_id, clientIp, deadline, serverId);
-        
-  return createLoginResponse(account_id, encryptedApiToken, url, encryptedCookieToken, renewToken);
-      }
-    } else {
-      // 直接数据调用（internal 已提前返回，这里通常不会走到）
-      return { success: true, encrypted_token: encryptedApiToken, account_id: account_id };
-    }
-  } catch (error) {
-    // 捕获所有错误，向客户端返回通用安全消息，详细错误记录到控制台
-    console.error('Login processing error:', error);
-    if (input instanceof Request) {
-      // 根据错误类型给出合适的状态码，但消息保持通用
-      let status = 400;
-      let userMessage = 'Invalid login request';
-      if (error.message.includes('Authentication failed') || error.message.includes('session') || error.message.includes('expired')) {
-        status = 401;
-        userMessage = 'Authentication failed. Please check your credentials.';
-      } else if (error.message.includes('Missing required fields') || error.message.includes('required for')) {
-        status = 400;
-        userMessage = 'Missing required login parameters.';
-      }
-      if (DEBUG){
-        userMessage = 'Invalid login request:' + error;
-      }
-      return new Response(JSON.stringify({ error: userMessage }), {
-        status: status,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    } else {
-      // 内部调用返回完整错误信息
-      throw new Error('Login processing failed'+ error);
-    }
-  }
 }
 // 登录响应（设置 Cookie）
-function createLoginResponse(account_id, encryptedApiToken, requestUrl, encryptedCookieToken, renewToken = null) {
-  const headers = new Headers();
-  headers.set('Content-Type', 'application/json');
-  const secureFlag = String(requestUrl ?? '').startsWith('https:') ? '; Secure' : '';
-  const maxAge = typeof loginPeriod !== 'undefined' ? loginPeriod : 604800;
-  const cookieOptions = `Max-Age=${maxAge}; Path=/; HttpOnly${secureFlag}; SameSite=Strict`;
+function createLoginResponse(account_id, encryptedApiToken, requestUrl, encryptedCookieToken, renewToken = null, encryptedAccountName = null, plainAccountName = null) {
+    const headers = new Headers();
+    headers.set('Content-Type', 'application/json');
+    const secureFlag = String(requestUrl ?? '').startsWith('https:') ? '; Secure' : '';
+    const maxAge = typeof loginPeriod !== 'undefined' ? loginPeriod : 604800;
+    const cookieOptions = `Max-Age=${maxAge}; Path=/; HttpOnly${secureFlag}; SameSite=Strict`;
 
-  headers.append('Set-Cookie', `account_id=${account_id}; ${cookieOptions}`);
-  headers.append('Set-Cookie', `cf_api=${encryptedCookieToken}; ${cookieOptions}`);
-  headers.append('Set-Cookie', `token_encrypted=true; ${cookieOptions}`);
-  // 登录指示
-  headers.append('Set-Cookie',`cookie_available=true;Max-Age=${maxAge}; Path=/; SameSite=Lax`);
+    headers.append('Set-Cookie', `account_id=${account_id}; ${cookieOptions}`);
+    headers.append('Set-Cookie', `cf_api=${encryptedCookieToken}; ${cookieOptions}`);
+    headers.append('Set-Cookie', `token_encrypted=true; ${cookieOptions}`);
+    if (encryptedAccountName) {
+        headers.append('Set-Cookie', `account_name=${encodeURIComponent(encryptedAccountName)}; ${cookieOptions}`);
+    }
+    // 登录指示
+    headers.append('Set-Cookie', `cookie_available=true;Max-Age=${maxAge}; Path=/; SameSite=Lax`);
 
-  if (renewToken) {
-    const renewMaxAge = renewal.maxPeriod;
-    const renewCookieOptions = `Max-Age=${renewMaxAge}; Path=/; HttpOnly${secureFlag}; SameSite=Strict`;
-    headers.append('Set-Cookie', `renew_token=${renewToken}; ${renewCookieOptions}`);
-  }
+    if (renewToken) {
+        const renewMaxAge = renewal.maxPeriod;
+        const renewCookieOptions = `Max-Age=${renewMaxAge}; Path=/; HttpOnly${secureFlag}; SameSite=Strict`;
+        headers.append('Set-Cookie', `renew_token=${renewToken}; ${renewCookieOptions}`);
+    }
 
-  return new Response(JSON.stringify({
-    success: true,
-    encrypted_token: encryptedApiToken,
-    account_id: account_id
-  }), { status: 200, headers });
+    const body = {
+        success: true,
+        encrypted_token: encryptedApiToken,
+        account_id: account_id
+    };
+    if (plainAccountName) {
+        body.account_name = plainAccountName;
+    }
+    return new Response(JSON.stringify(body), { status: 200, headers });
 }
 // ==================== 登录续期====================
 // 派生秘密钥
@@ -2260,77 +2351,77 @@ async function deriveAesKey(serverId) {
     /**
  * 从 serverId 派生 AES-256-GCM 密钥（SHA-256 哈希后作为原始密钥）
  */
-  const enc = new TextEncoder();
-  const hash = await crypto.subtle.digest('SHA-256', enc.encode(serverId));
-  return crypto.subtle.importKey('raw', hash, 'AES-GCM', false, ['encrypt', 'decrypt']);
+    const enc = new TextEncoder();
+    const hash = await crypto.subtle.digest('SHA-256', enc.encode(serverId));
+    return crypto.subtle.importKey('raw', hash, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 // 创建续期令牌
 async function generateRenewToken(accountId, clientIp, deadlineTimestamp, serverId) {
-  /**
- * 生成加密的 renew_token
- * @param {string} accountId
- * @param {string} clientIp
- * @param {number} deadlineTimestamp - 毫秒时间戳
- * @param {string} serverId
- * @returns {Promise<string>} renew_token (base64)
- */
+    /**
+   * 生成加密的 renew_token
+   * @param {string} accountId
+   * @param {string} clientIp
+   * @param {number} deadlineTimestamp - 毫秒时间戳
+   * @param {string} serverId
+   * @returns {Promise<string>} renew_token (base64)
+   */
 
-  const key = await deriveAesKey(serverId);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const payload = `${accountId}|${clientIp}|${deadlineTimestamp}`;
-  const enc = new TextEncoder();
+    const key = await deriveAesKey(serverId);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const payload = `${accountId}|${clientIp}|${deadlineTimestamp}`;
+    const enc = new TextEncoder();
 
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    enc.encode(payload)
-  );
+    const ciphertext = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        enc.encode(payload)
+    );
 
-  // 组合 iv + 密文（含 auth tag），转为 base64
-  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
-  combined.set(iv);
-  combined.set(new Uint8Array(ciphertext), iv.length);
-  return btoa(String.fromCharCode(...combined));
+    // 组合 iv + 密文（含 auth tag），转为 base64
+    const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+    combined.set(iv);
+    combined.set(new Uint8Array(ciphertext), iv.length);
+    return btoa(String.fromCharCode(...combined));
 }
 // 验证续期令牌
 async function verifyRenewToken(renewToken, clientIp, serverId) {
-  try {
-      /**
- * 验证并解密 renew_token
- * @param {string} renewToken
- * @param {string} clientIp - 当前请求的 IP
- * @param {string} serverId
- * @returns {Promise<{valid: boolean, accountId?: string, reason?: string}>}
- */
-    const key = await deriveAesKey(serverId);
-    const raw = Uint8Array.from(atob(renewToken), c => c.charCodeAt(0));
-    const iv = raw.slice(0, 12);
-    const ciphertext = raw.slice(12);
+    try {
+        /**
+   * 验证并解密 renew_token
+   * @param {string} renewToken
+   * @param {string} clientIp - 当前请求的 IP
+   * @param {string} serverId
+   * @returns {Promise<{valid: boolean, accountId?: string, reason?: string}>}
+   */
+        const key = await deriveAesKey(serverId);
+        const raw = Uint8Array.from(atob(renewToken), c => c.charCodeAt(0));
+        const iv = raw.slice(0, 12);
+        const ciphertext = raw.slice(12);
 
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      ciphertext
-    );
+        const decrypted = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv },
+            key,
+            ciphertext
+        );
 
-    const payload = new TextDecoder().decode(decrypted);
-    const [accountId, tokIp, deadlineStr] = payload.split('|');
-    if (!accountId || !tokIp || !deadlineStr) {
-      return { valid: false, reason: 'bad payload' };
+        const payload = new TextDecoder().decode(decrypted);
+        const [accountId, tokIp, deadlineStr] = payload.split('|');
+        if (!accountId || !tokIp || !deadlineStr) {
+            return { valid: false, reason: 'bad payload' };
+        }
+
+        const deadline = parseInt(deadlineStr, 10);
+        if (isNaN(deadline)) return { valid: false, reason: 'invalid deadline' };
+
+        // 检查 IP 和有效期
+        if (tokIp !== clientIp) return { valid: false, reason: 'ip mismatch' };
+        if (Date.now() > deadline) return { valid: false, reason: 'expired' };
+
+        return { valid: true, accountId };
+    } catch (e) {
+        // 解密失败（篡改、密钥错误等）
+        return { valid: false, reason: 'decryption failed' };
     }
-
-    const deadline = parseInt(deadlineStr, 10);
-    if (isNaN(deadline)) return { valid: false, reason: 'invalid deadline' };
-
-    // 检查 IP 和有效期
-    if (tokIp !== clientIp) return { valid: false, reason: 'ip mismatch' };
-    if (Date.now() > deadline) return { valid: false, reason: 'expired' };
-
-    return { valid: true, accountId };
-  } catch (e) {
-    // 解密失败（篡改、密钥错误等）
-    return { valid: false, reason: 'decryption failed' };
-  }
 }
 // 获取cookie状态
 async function getCookieStatus(cookieValue, accountId, serverId) {
@@ -2343,201 +2434,218 @@ async function getCookieStatus(cookieValue, accountId, serverId) {
  *   - valid: true 表示 Cookie 有效且（若为增强格式）未过期；false 表示无效/过期
  *   - remainingSeconds: 有效时返回剩余秒数（增强格式），旧版格式返回 null；无效时返回 null
  */
-  if (!cookieValue || !accountId || !serverId) {
-    return { valid: false, remainingSeconds: null };
-  }
-
-  // 定义时钟偏差（与 decryptForCookie 保持一致）
-  const CLOCK_SKEW = typeof globalThis.CLOCK_SKEW !== 'undefined' ? globalThis.CLOCK_SKEW : 0;
-
-  try {
-    // 尝试按增强格式解析：外层解密得到 "内层密文|过期时间戳"
-    const payload = await decrypt(cookieValue, serverId, COOKIE_EXPIRY_WORKER_ID);
-    const parts = payload.split('|');
-    if (parts.length !== 2) {
-      // 格式错误，无效
-      return { valid: false, remainingSeconds: null };
+    if (!cookieValue || !accountId || !serverId) {
+        return { valid: false, remainingSeconds: null };
     }
 
-    const innerCipher = parts[0];
-    const expiryTimestamp = parseInt(parts[1], 10);
-    const now = Date.now();
+    // 定义时钟偏差（与 decryptForCookie 保持一致）
+    const CLOCK_SKEW = typeof globalThis.CLOCK_SKEW !== 'undefined' ? globalThis.CLOCK_SKEW : 0;
 
-    // 检查是否过期（允许时钟偏差）
-    if (now > expiryTimestamp + CLOCK_SKEW) {
-      return { valid: false, remainingSeconds: null };
-    }
-
-    // 验证内层是否能正确解密（确保 token 未被篡改）
     try {
-      await decrypt(innerCipher, serverId, accountId);
-    } catch (innerErr) {
-      // 内层解密失败 => Cookie 无效
-      return { valid: false, remainingSeconds: null };
-    }
+        // 尝试按增强格式解析：外层解密得到 "内层密文|过期时间戳"
+        const payload = await decrypt(cookieValue, serverId, COOKIE_EXPIRY_WORKER_ID);
+        const parts = payload.split('|');
+        if (parts.length !== 2) {
+            // 格式错误，无效
+            return { valid: false, remainingSeconds: null };
+        }
 
-    // 计算剩余秒数（不小于 0）
-    const remainingSeconds = Math.max(0, Math.floor((expiryTimestamp - now) / 1000));
-    return { valid: true, remainingSeconds };
-  } catch (err) {
-    // 增强格式解析失败 -> 尝试兼容旧版单层加密（无过期时间）
-    try {
-      await decrypt(cookieValue, serverId, accountId);
-      // 旧版 Cookie 有效，但无法获取剩余时间
-      return { valid: true, remainingSeconds: null };
-    } catch (legacyErr) {
-      // 两种格式都失败
-      return { valid: false, remainingSeconds: null };
+        const innerCipher = parts[0];
+        const expiryTimestamp = parseInt(parts[1], 10);
+        const now = Date.now();
+
+        // 检查是否过期（允许时钟偏差）
+        if (now > expiryTimestamp + CLOCK_SKEW) {
+            return { valid: false, remainingSeconds: null };
+        }
+
+        // 验证内层是否能正确解密（确保 token 未被篡改）
+        try {
+            await decrypt(innerCipher, serverId, accountId);
+        } catch (innerErr) {
+            // 内层解密失败 => Cookie 无效
+            return { valid: false, remainingSeconds: null };
+        }
+
+        // 计算剩余秒数（不小于 0）
+        const remainingSeconds = Math.max(0, Math.floor((expiryTimestamp - now) / 1000));
+        return { valid: true, remainingSeconds };
+    } catch (err) {
+        // 增强格式解析失败 -> 尝试兼容旧版单层加密（无过期时间）
+        try {
+            await decrypt(cookieValue, serverId, accountId);
+            // 旧版 Cookie 有效，但无法获取剩余时间
+            return { valid: true, remainingSeconds: null };
+        } catch (legacyErr) {
+            // 两种格式都失败
+            return { valid: false, remainingSeconds: null };
+        }
     }
-  }
 }
 // 续期cookie
 async function checkAndRenewCookie(cookies, serverId, options = {}) {
-  /**
-   * 核心续期/重新签发 Cookie 逻辑
-   * @param {Object} cookies - 已解析的 cookies 对象
-   * @param {string} serverId
-   * @param {Object} options - { requireRenewToken: boolean, request?: Request, redirect?: string }
-   * @returns {Promise<Response>}
-   */
-  const { requireRenewToken = false, request = null, redirect = null } = options;
-  const cookieValue = cookies?.cf_api;
-  const accountId = cookies?.account_id;
+    /**
+     * 核心续期/重新签发 Cookie 逻辑
+     * @param {Object} cookies - 已解析的 cookies 对象
+     * @param {string} serverId
+     * @param {Object} options - { requireRenewToken: boolean, request?: Request, redirect?: string }
+     * @returns {Promise<Response>}
+     */
+    const { requireRenewToken = false, request = null, redirect = null } = options;
+    const cookieValue = cookies?.cf_api;
+    const accountId = cookies?.account_id;
 
-  // ========== 1. 优先检查认证凭证是否存在 ==========
-  if (!cookieValue || !accountId) {
-    return new Response(JSON.stringify({ error: 'Missing authentication cookie' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-
-  const totalExpirySeconds = (typeof loginPeriod !== 'undefined') ? loginPeriod : 604800;
-  const RENEW_THRESHOLD = totalExpirySeconds * renewal.threshold;
-
-  // ========== 2. 解密并验证主 Token（cf_api）有效性 ==========
-  let needRenew = false;
-  let originalToken = null;
-
-  try {
-    const payload = await decrypt(cookieValue, serverId, COOKIE_EXPIRY_WORKER_ID);
-    const parts = payload.split('|');
-    if (parts.length === 2) {
-      const expiryTimestamp = parseInt(parts[1], 10);
-      const remainingMs = expiryTimestamp - Date.now();
-      const remainingSec = Math.max(0, Math.floor(remainingMs / 1000));
-      if (remainingSec < RENEW_THRESHOLD) {
-        needRenew = true;
-      }
-      originalToken = await decrypt(parts[0], serverId, accountId);
-    } else {
-      // 格式错误 -> 401
-      return new Response(JSON.stringify({ error: 'Invalid cookie format' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' }
-      });
+    // ========== 1. 优先检查认证凭证是否存在 ==========
+    if (!cookieValue || !accountId) {
+        return new Response(JSON.stringify({ error: 'Missing authentication cookie' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' }
+        });
     }
-  } catch (err) {
-    // 尝试旧格式解密
+
+    const totalExpirySeconds = (typeof loginPeriod !== 'undefined') ? loginPeriod : 604800;
+    const RENEW_THRESHOLD = totalExpirySeconds * renewal.threshold;
+
+    // ========== 2. 解密并验证主 Token（cf_api）有效性 ==========
+    let needRenew = false;
+    let originalToken = null;
+
     try {
-      originalToken = await decrypt(cookieValue, serverId, accountId);
-      needRenew = true; // 旧版一律续期
-    } catch (legacyErr) {
-      return new Response(JSON.stringify({ error: 'Invalid or expired cookie' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' }
-      });
+        const payload = await decrypt(cookieValue, serverId, COOKIE_EXPIRY_WORKER_ID);
+        const parts = payload.split('|');
+        if (parts.length === 2) {
+            const expiryTimestamp = parseInt(parts[1], 10);
+            const remainingMs = expiryTimestamp - Date.now();
+            const remainingSec = Math.max(0, Math.floor(remainingMs / 1000));
+            if (remainingSec < RENEW_THRESHOLD) {
+                needRenew = true;
+            }
+            originalToken = await decrypt(parts[0], serverId, accountId);
+        } else {
+            // 格式错误 -> 401
+            return new Response(JSON.stringify({ error: 'Invalid cookie format' }), {
+                status: 401,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+    } catch (err) {
+        // 尝试旧格式解密
+        try {
+            originalToken = await decrypt(cookieValue, serverId, accountId);
+            needRenew = true; // 旧版一律续期
+        } catch (legacyErr) {
+            return new Response(JSON.stringify({ error: 'Invalid or expired cookie' }), {
+                status: 401,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
     }
-  }
 
-  // 验证 Token 是否仍然有效（与后端核对）
-  const { valid } = await verifyApiToken(originalToken, accountId);
-  if (!valid) {
-    return new Response(JSON.stringify({ error: 'Token invalid, please re-login' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
+    // 验证 Token 是否仍然有效（与后端核对）
+    const { valid } = await verifyApiToken(originalToken, accountId);
+    if (!valid) {
+        return new Response(JSON.stringify({ error: 'Token invalid, please re-login' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
 
-  // ========== 3. 如果要求续期（自动续期接口），再检查 renew_token（403 场景） ==========
-  if (requireRenewToken) {
-    const renewToken = cookies?.renew_token;
-    if (!renewToken) {
-      if (redirect && request) {
+    // ========== 3. 如果要求续期（自动续期接口），再检查 renew_token（403 场景） ==========
+    if (requireRenewToken) {
+        const renewToken = cookies?.renew_token;
+        if (!renewToken) {
+            if (redirect && request) {
+                return Response.redirect(new URL(redirect, request.url).toString(), 302);
+            }
+            return new Response(JSON.stringify({ error: 'Missing renew token' }), {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        let clientIp = '0.0.0.0';
+        if (request) {
+            clientIp = request.headers.get('CF-Connecting-IP') || '0.0.0.0';
+        }
+
+        const verification = await verifyRenewToken(renewToken, clientIp, serverId);
+        if (!verification.valid) {
+            if (redirect && request) {
+                return Response.redirect(new URL(redirect, request.url).toString(), 302);
+            }
+            // 吊销 renew_token
+            const headers = new Headers({ 'Content-Type': 'application/json' });
+            const revokeCookie = 'renew_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict';
+            headers.append('Set-Cookie', revokeCookie);
+            return new Response(JSON.stringify({ error: 'Renew token invalid or expired', reason: verification.reason }), {
+                status: 403,
+                headers
+            });
+        }
+
+        // 校验 token 中的 accountId 是否匹配
+        if (verification.accountId !== accountId) {
+            if (redirect && request) {
+                return Response.redirect(new URL(redirect, request.url).toString(), 302);
+            }
+            return new Response(JSON.stringify({ error: 'Account mismatch' }), {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        // 不需要续期时直接返回（仍然 200，但注明未续期）
+        if (!needRenew) {
+            if (redirect && request) {
+                return Response.redirect(new URL(redirect, request.url).toString(), 302);
+            }
+            const response = new Response(JSON.stringify({ renewed: false, message: 'No renewal needed' }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            });
+            return response;
+        }
+    }
+
+    // ========== 4. 生成新 Cookie（续期）并返回 200 ==========
+    const newEncryptedCookie = await encryptForCookie(originalToken, serverId, accountId, totalExpirySeconds);
+    const secureFlag = String(options?.request?.url ?? '').startsWith('https:') ? '; Secure' : '';
+    const cookieOptions = `Max-Age=${totalExpirySeconds}; Path=/; HttpOnly${secureFlag}; SameSite=Strict`;
+
+    const responseHeaders = new Headers({ 'Content-Type': 'application/json' });
+    responseHeaders.append('Set-Cookie', `account_id=${accountId}; ${cookieOptions}`);
+    responseHeaders.append('Set-Cookie', `cf_api=${newEncryptedCookie}; ${cookieOptions}`);
+    responseHeaders.append('Set-Cookie', `token_encrypted=true; ${cookieOptions}`);
+    // 续期 account_name cookie（使用原有的加密值续期 Max-Age，或重新加密）
+    if (cookies?.account_name) {
+        responseHeaders.append('Set-Cookie', `account_name=${cookies.account_name}; ${cookieOptions}`);
+    } else {
+        // 若原 cookie 中不存在则尝试重新获取并加密
+        try {
+            const rawAccountName = await fetchCloudflareAccountName(originalToken, accountId);
+            if (rawAccountName) {
+                const encName = await simpleEncryptWithTokenHash(rawAccountName, originalToken);
+                if (encName) {
+                    responseHeaders.append('Set-Cookie', `account_name=${encodeURIComponent(encName)}; ${cookieOptions}`);
+                }
+            }
+        } catch (e) {
+            console.warn('Renewal: failed to re-process account_name:', e);
+        }
+    }
+    // 登录指示
+    responseHeaders.append('Set-Cookie', `cookie_available; Max-Age=${totalExpirySeconds}; Path=/; SameSite=Lax`);
+
+    const response = new Response(JSON.stringify({
+        success: true,
+        renewed: needRenew || !requireRenewToken,
+        message: 'Session refreshed'
+    }), { status: 200, headers: responseHeaders });
+
+    if (redirect && request) {
         return Response.redirect(new URL(redirect, request.url).toString(), 302);
-      }
-      return new Response(JSON.stringify({ error: 'Missing renew token' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
     }
-
-    let clientIp = '0.0.0.0';
-    if (request) {
-      clientIp = request.headers.get('CF-Connecting-IP') || '0.0.0.0';
-    }
-
-    const verification = await verifyRenewToken(renewToken, clientIp, serverId);
-    if (!verification.valid) {
-      if (redirect && request) {
-        return Response.redirect(new URL(redirect, request.url).toString(), 302);
-      }
-      // 吊销 renew_token
-      const headers = new Headers({ 'Content-Type': 'application/json' });
-      const revokeCookie = 'renew_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict';
-      headers.append('Set-Cookie', revokeCookie);
-      return new Response(JSON.stringify({ error: 'Renew token invalid or expired', reason: verification.reason }), {
-        status: 403,
-        headers
-      });
-    }
-
-    // 校验 token 中的 accountId 是否匹配
-    if (verification.accountId !== accountId) {
-      if (redirect && request) {
-        return Response.redirect(new URL(redirect, request.url).toString(), 302);
-      }
-      return new Response(JSON.stringify({ error: 'Account mismatch' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // 不需要续期时直接返回（仍然 200，但注明未续期）
-    if (!needRenew) {
-        if (redirect && request) {
-        return Response.redirect(new URL(redirect, request.url).toString(), 302);
-      }
-      const response = new Response(JSON.stringify({ renewed: false, message: 'No renewal needed' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      });
-      return response;
-    }
-  }
-
-  // ========== 4. 生成新 Cookie（续期）并返回 200 ==========
-  const newEncryptedCookie = await encryptForCookie(originalToken, serverId, accountId, totalExpirySeconds);
-  const secureFlag = '; Secure';
-  const cookieOptions = `Max-Age=${totalExpirySeconds}; Path=/; HttpOnly${secureFlag}; SameSite=Strict`;
-
-  const responseHeaders = new Headers({ 'Content-Type': 'application/json' });
-  responseHeaders.append('Set-Cookie', `account_id=${accountId}; ${cookieOptions}`);
-  responseHeaders.append('Set-Cookie', `cf_api=${newEncryptedCookie}; ${cookieOptions}`);
-  responseHeaders.append('Set-Cookie', `token_encrypted=true; ${cookieOptions}`);
-  // 登录指示
-  responseHeaders.append('Set-Cookie', `cookie_available; Max-Age=${totalExpirySeconds}; Path=/; SameSite=Lax`);
-
-  const response = new Response(JSON.stringify({
-    success: true,
-    renewed: needRenew || !requireRenewToken,
-    message: 'Session refreshed'
-  }), { status: 200, headers: responseHeaders });
-
-  if (redirect && request) {
-    return Response.redirect(new URL(redirect, request.url).toString(), 302);
-  }
-  return response;
+    return response;
 }
 // 显示登录页面 /login
 async function showLoginPage(request, url) {
@@ -2748,6 +2856,44 @@ async function showLoginPage(request, url) {
             }
         }
 
+        // 独立存储账户名称 meta，保证完全向后兼容（不侵入原有 cf_accounts 结构）
+        const ACCOUNTS_META_KEY = 'cf_accounts_meta';
+        function loadAccountsMeta() {
+            try {
+                return JSON.parse(localStorage.getItem(ACCOUNTS_META_KEY) || '{}');
+            } catch (e) {
+                console.error('Failed to load accounts meta from localStorage', e);
+                return {};
+            }
+        }
+        function saveAccountNameMeta(accountId, accountName) {
+            if (!accountId || !accountName) return;
+            try {
+                const meta = loadAccountsMeta();
+                meta[accountId] = Object.assign({}, meta[accountId] || {}, { account_name: accountName });
+                localStorage.setItem(ACCOUNTS_META_KEY, JSON.stringify(meta));
+            } catch (e) {
+                console.warn('Failed to save account name meta:', e);
+            }
+        }
+        function removeAccountNameMeta(accountId) {
+            if (!accountId) return;
+            try {
+                const meta = loadAccountsMeta();
+                if (meta[accountId]) {
+                    delete meta[accountId];
+                    localStorage.setItem(ACCOUNTS_META_KEY, JSON.stringify(meta));
+                }
+            } catch (e) {
+                console.warn('Failed to remove account name meta:', e);
+            }
+        }
+        function getAccountDisplayName(accountId) {
+            const meta = loadAccountsMeta();
+            const name = meta[accountId]?.account_name;
+            return (name && String(name).trim()) ? String(name).trim() : accountId;
+        }
+
         // 渲染账户列表，每个密码框都带有独立的切换按钮
         function renderAccountList() {
             const accounts = loadAccounts();
@@ -2756,10 +2902,15 @@ async function showLoginPage(request, url) {
             if (Object.keys(accounts).length > 0) {
                 let html = '';
                 for (const [accountId] of Object.entries(accounts)) {
+                    const displayName = getAccountDisplayName(accountId);
+                    const showName = displayName !== accountId;
                     const pwdId = \`pwd_\${accountId}\`;
                     html += \`
                     <div class="account-item">
-                        <p class="mb-2" style="overflow-wrap: break-word;word-wrap: break-word;word-break: break-word;"><strong>\${escapeHtml(accountId)}</strong></p>
+                        <p class="mb-2" style="overflow-wrap: break-word;word-wrap: break-word;word-break: break-word;" title="\${showName ? escapeHtml('ID: ' + accountId) : ''}">
+                            <strong>\${escapeHtml(displayName)}</strong>
+                            \${showName ? \`<br><small style="color: var(--text-secondary); font-weight: 400;">ID: \${escapeHtml(accountId)}</small>\` : ''}
+                        </p>
                         <div class="password-wrapper">
                             <input type="password" id="\${pwdId}" placeholder="输入密码" class="mb-2">
                             <button type="button" class="toggle-password" data-target="\${pwdId}">
@@ -3062,6 +3213,7 @@ async function showLoginPage(request, url) {
                     const newDoubleEncryptedToken = await encryptForStorage(result.encrypted_token, password);
                     accounts[accountId] = newDoubleEncryptedToken;
                     localStorage.setItem('cf_accounts', JSON.stringify(accounts));
+                    if (result.account_name) saveAccountNameMeta(accountId, result.account_name);
                     window.location.href = '/list';
                 } else {
                     const errorData = await response.json().catch(() => ({}));
@@ -3128,6 +3280,7 @@ async function showLoginPage(request, url) {
                     const accounts = loadAccounts();
                     accounts[accountId] = doubleEncryptedToken;
                     localStorage.setItem('cf_accounts', JSON.stringify(accounts));
+                    if (result.account_name) saveAccountNameMeta(accountId, result.account_name);
                     window.location.href = '/list';
                 } else {
                     let errorMsgText = '导入失败，请检查API Token';
@@ -3156,6 +3309,7 @@ async function showLoginPage(request, url) {
                 const accounts = loadAccounts();
                 delete accounts[accountId];
                 localStorage.setItem('cf_accounts', JSON.stringify(accounts));
+                removeAccountNameMeta(accountId);
                 renderAccountList();
             }
         }
@@ -3300,19 +3454,19 @@ async function showLoginPage(request, url) {
 async function handleLogout(request) {
     const headers = new Headers();
     headers.set('Content-Type', 'text/html');
-    
+
     // 从请求中获取cookie
     const cookieHeader = request.headers.get('Cookie') || '';
     const cookies = Object.fromEntries(cookieHeader.split(';').map(c => {
         const [key, ...vals] = c.trim().split('=');
         return [key, vals.join('=')];
     }));
-    
+
     // 优先从 URL 参数获取 account_id，其次从 cookie 获取
     const url = new URL(request.url);
     const accountIdFromUrl = url.searchParams.get('account_id');
     const accountId = accountIdFromUrl || cookies.account_id || '';
-    
+
     // 清除所有cookie
     const secureFlag = request.url.startsWith('https:') ? '; Secure' : '';
     const expireDate = 'Thu, 01 Jan 1970 00:00:00 GMT';
@@ -3320,6 +3474,8 @@ async function handleLogout(request) {
     headers.append('Set-Cookie', `cf_api=; Path=/; expires=${expireDate}${secureFlag}; SameSite=Strict`);
     headers.append('Set-Cookie', `token_encrypted=; Path=/; expires=${expireDate}${secureFlag}; SameSite=Strict`);
     headers.append('Set-Cookie', `encrypted_data=; Path=/; expires=${expireDate}${secureFlag}; SameSite=Strict`);
+    headers.append('Set-Cookie', `account_name=; Path=/; expires=${expireDate}${secureFlag}; SameSite=Strict`);
+    headers.append('Set-Cookie', `renew_token=; Path=/; expires=${expireDate}${secureFlag}; SameSite=Strict`);
     headers.append('Set-Cookie', `cookie_available; Max-Age=${expireDate}; Path=/; SameSite=Lax`);
     const html = `
         <!DOCTYPE html>
@@ -3407,6 +3563,14 @@ async function handleLogout(request) {
                         localStorage.setItem('cf_accounts', JSON.stringify(accounts));
                         console.log('已删除本地存储账户:', accountId);
                     }
+                    // 同步删除账户名称 meta（向后兼容，不存在则忽略）
+                    try {
+                        const meta = JSON.parse(localStorage.getItem('cf_accounts_meta') || '{}');
+                        if (meta[accountId]) {
+                            delete meta[accountId];
+                            localStorage.setItem('cf_accounts_meta', JSON.stringify(meta));
+                        }
+                    } catch (_) {}
                 } catch(e) {
                     console.warn('删除本地存储失败:', e);
                 }
@@ -3424,7 +3588,7 @@ async function handleLogout(request) {
         </body>
         </html>
         `;
-    
+
     return new Response(buildHtmlResponse(html, '', {
         littleNav: true,
         directlyReturn: true,
@@ -3521,13 +3685,13 @@ async function handleEditorRequest(request, accountId, token) {
                 }
             });
             if (response.ok) {
-            try {
-                await enableLogsForWorker(accountId, token, workerName);
-            } catch (logError) {
-                console.warn('启用日志失败:', logError.message);
-                // 注意：不抛出错误，因为Worker上传已经成功
+                try {
+                    await enableLogsForWorker(accountId, token, workerName);
+                } catch (logError) {
+                    console.warn('启用日志失败:', logError.message);
+                    // 注意：不抛出错误，因为Worker上传已经成功
+                }
             }
-        }
             return new Response(await response.text(), {
                 status: response.status,
                 headers: {
@@ -4200,32 +4364,32 @@ async function handleListPage(acc, logined) {
         </body>
         </html>
         `;
-        /*
-    if (logined) {
-        return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/'
-        });
-    } else {
-        return buildHtmlResponse(html, '', {
-            littleNav: true,
-            errorOverlay: {
-                code: 401,
-                message: '请先登录',
-                redirectUrl: '/login',
-                homeOnly: true
-            },
-            errorHandler: errHtml,
-            homeUrl: '/'
-        });
-    }
-    */
+    /*
+if (logined) {
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/'
+    });
+} else {
+    return buildHtmlResponse(html, '', {
+        littleNav: true,
+        errorOverlay: {
+            code: 401,
+            message: '请先登录',
+            redirectUrl: '/login',
+            homeOnly: true
+        },
+        errorHandler: errHtml,
+        homeUrl: '/'
+    });
+}
+*/
+    return buildHtmlResponse(html, acc, {
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/'
+    });
 }
 // 显示编辑页面 /edit
 async function handleEditPage(request, acc, logined) {
@@ -4372,8 +4536,8 @@ async function handleEditPage(request, acc, logined) {
         <div class="toast-container" id="toastContainer"></div>
         <div class="card worker-info">
         <h2>Worker: ${workerId.replace(/[<>&]/g, c => ({
-            '<': '&lt;', '>': '&gt;', '&': '&amp;'
-        })[c])}</h2>
+        '<': '&lt;', '>': '&gt;', '&': '&amp;'
+    })[c])}</h2>
         </div>
 
         <div class="card">
@@ -4917,663 +5081,683 @@ async function handleEditPage(request, acc, logined) {
         });
     }*/
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/list'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/list'
+    });
 }
 //=================kv=======================
 // 处理kv和命名空间 /api/kv | /api/namespaces
-async function handleKvNamespace(request,accountId,apiToken,url,method){
+async function handleKvNamespace(request, accountId, apiToken, url, method) {
     const { pathname, searchParams } = url;
     // 定义路由表（顺序重要，优先匹配更具体的规则）
     const routes = [
-      // 命名空间列表
-{ method: 'GET', pattern: new URLPattern({ pathname: '/api/namespaces' }), handler: async (req) => {
-  try {
-    const page = parseInt(url.searchParams.get('page') || '1', 10);
-    const per_page = parseInt(url.searchParams.get('per_page') || '20', 10);
-    const result = await listNamespaces(accountId, apiToken, page, per_page);
-    return jsonResponse(result,{status:200});  // result 已包含 result_info 分页信息
-  } catch (err) {
-    return errorResponse(err);
-  }
-} },
-      // 创建命名空间
-      { method: 'POST', pattern: new URLPattern({ pathname: '/api/namespaces' }), handler: async (req) => {
-  try {
-    const { title } = await req.json();
-    if (!title) return new Response('Missing "title"', { status: 400 });
-    return await createNamespace(accountId, apiToken, title);
-  } catch (err) {
-    return errorResponse(err);
-  }
-}},
-      // 删除命名空间
-      { method: 'DELETE', pattern: new URLPattern({ pathname: '/namespaces/:namespaceId' }), handler: async (match) => {
-  try {
-    const { namespaceId } = match.pathname.groups;
-    return await deleteNamespace(accountId, apiToken, namespaceId);
-  } catch (err) {
-    return errorResponse(err);
-  }
-} },
+        // 命名空间列表
+        {
+            method: 'GET', pattern: new URLPattern({ pathname: '/api/namespaces' }), handler: async (req) => {
+                try {
+                    const page = parseInt(url.searchParams.get('page') || '1', 10);
+                    const per_page = parseInt(url.searchParams.get('per_page') || '20', 10);
+                    const result = await listNamespaces(accountId, apiToken, page, per_page);
+                    return jsonResponse(result, { status: 200 });  // result 已包含 result_info 分页信息
+                } catch (err) {
+                    return errorResponse(err);
+                }
+            }
+        },
+        // 创建命名空间
+        {
+            method: 'POST', pattern: new URLPattern({ pathname: '/api/namespaces' }), handler: async (req) => {
+                try {
+                    const { title } = await req.json();
+                    if (!title) return new Response('Missing "title"', { status: 400 });
+                    return await createNamespace(accountId, apiToken, title);
+                } catch (err) {
+                    return errorResponse(err);
+                }
+            }
+        },
+        // 删除命名空间
+        {
+            method: 'DELETE', pattern: new URLPattern({ pathname: '/namespaces/:namespaceId' }), handler: async (match) => {
+                try {
+                    const { namespaceId } = match.pathname.groups;
+                    return await deleteNamespace(accountId, apiToken, namespaceId);
+                } catch (err) {
+                    return errorResponse(err);
+                }
+            }
+        },
 
-      // 列出 KV 键（支持分页和前缀过滤）
-      { method: 'GET', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/keys' }), handler: async (match) => {
-  try {
-    const { namespaceId } = match.pathname.groups;
-    const limit = searchParams.get('limit');
-    const cursor = searchParams.get('cursor');
-    const prefix = searchParams.get('prefix');
-    return await listKeys(accountId, apiToken, namespaceId, limit, cursor, prefix);
-  } catch (err) {
-    return errorResponse(err);
-  }
-}},
+        // 列出 KV 键（支持分页和前缀过滤）
+        {
+            method: 'GET', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/keys' }), handler: async (match) => {
+                try {
+                    const { namespaceId } = match.pathname.groups;
+                    const limit = searchParams.get('limit');
+                    const cursor = searchParams.get('cursor');
+                    const prefix = searchParams.get('prefix');
+                    return await listKeys(accountId, apiToken, namespaceId, limit, cursor, prefix);
+                } catch (err) {
+                    return errorResponse(err);
+                }
+            }
+        },
 
-      // 获取键的元数据
-      { method: 'GET', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/metadata/:key' }), handler: async (match) => {
-  try {
-    const { namespaceId, key } = match.pathname.groups;
-    return await readMetadata(accountId, apiToken, namespaceId, decodeURIComponent(key));
-  } catch (err) {
-    return errorResponse(err);
-  }
-}},
+        // 获取键的元数据
+        {
+            method: 'GET', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/metadata/:key' }), handler: async (match) => {
+                try {
+                    const { namespaceId, key } = match.pathname.groups;
+                    return await readMetadata(accountId, apiToken, namespaceId, decodeURIComponent(key));
+                } catch (err) {
+                    return errorResponse(err);
+                }
+            }
+        },
 
-      // 批量写入
-      { method: 'POST', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/bulk' }), handler: (match, req) => {
-          try{
-        const { namespaceId } = match.pathname.groups;
-        return handleBulkWrite(accountId, apiToken, namespaceId, req);
-      } catch (err){
-          return errorResponse(err);
-      }
-    } },
+        // 批量写入
+        {
+            method: 'POST', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/bulk' }), handler: (match, req) => {
+                try {
+                    const { namespaceId } = match.pathname.groups;
+                    return handleBulkWrite(accountId, apiToken, namespaceId, req);
+                } catch (err) {
+                    return errorResponse(err);
+                }
+            }
+        },
 
-      // 流式下载二进制值
-      { method: 'GET', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/values/:key/stream' }), handler: async (match) => {
-  try {
-    const { namespaceId, key } = match.pathname.groups;
-    return await handleReadKeyStream(accountId, apiToken, namespaceId, decodeURIComponent(key));
-  } catch (err) {
-    return errorResponse(err);
-  }
-}},
+        // 流式下载二进制值
+        {
+            method: 'GET', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/values/:key/stream' }), handler: async (match) => {
+                try {
+                    const { namespaceId, key } = match.pathname.groups;
+                    return await handleReadKeyStream(accountId, apiToken, namespaceId, decodeURIComponent(key));
+                } catch (err) {
+                    return errorResponse(err);
+                }
+            }
+        },
 
-      // 读取键值（返回实际内容）
-      { method: 'GET', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/values/:key' }), handler: async (match) => {
-  try {
-    const { namespaceId, key } = match.pathname.groups;
-    return await handleReadKey(accountId, apiToken, namespaceId, decodeURIComponent(key));
-  } catch (err) {
-    return errorResponse(err);
-  }
-}},
+        // 读取键值（返回实际内容）
+        {
+            method: 'GET', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/values/:key' }), handler: async (match) => {
+                try {
+                    const { namespaceId, key } = match.pathname.groups;
+                    return await handleReadKey(accountId, apiToken, namespaceId, decodeURIComponent(key));
+                } catch (err) {
+                    return errorResponse(err);
+                }
+            }
+        },
 
-      // 写入键值
-      { method: 'PUT', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/values/:key' }), handler: async (match, req) => {
-  try {
-    const { namespaceId, key } = match.pathname.groups;
-    return await handleWriteKey(accountId, apiToken, namespaceId, decodeURIComponent(key), req);
-  } catch (err) {
-    return errorResponse(err);
-  }
-} },
+        // 写入键值
+        {
+            method: 'PUT', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/values/:key' }), handler: async (match, req) => {
+                try {
+                    const { namespaceId, key } = match.pathname.groups;
+                    return await handleWriteKey(accountId, apiToken, namespaceId, decodeURIComponent(key), req);
+                } catch (err) {
+                    return errorResponse(err);
+                }
+            }
+        },
 
-      // 删除键
-      { method: 'DELETE', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/values/:key' }), handler: async (match) => {
-  try {
-    const { namespaceId, key } = match.pathname.groups;
-    return await deleteKey(accountId, apiToken, namespaceId, decodeURIComponent(key));
-  } catch (err) {
-    return errorResponse(err);
-  }
-} },
+        // 删除键
+        {
+            method: 'DELETE', pattern: new URLPattern({ pathname: '/api/kv/:namespaceId/values/:key' }), handler: async (match) => {
+                try {
+                    const { namespaceId, key } = match.pathname.groups;
+                    return await deleteKey(accountId, apiToken, namespaceId, decodeURIComponent(key));
+                } catch (err) {
+                    return errorResponse(err);
+                }
+            }
+        },
     ];
     /**
  * 返回错误响应
  */
-function errorResponse(err) {
-  const status = err.status || 500;
-  const message = status === 404 ? 'Not Found' : err.message;
-  return new Response(JSON.stringify({ error: message }), {
-    status,
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-/**
- * api
- * 请求
- */
-async function apiRequest(path, method, body, token, extraHeaders = {}) {
-  const url = `https://api.cloudflare.com/client/v4/${path}`;
-  const headers = {
-    'Authorization': `Bearer ${token}`,
-    ...extraHeaders,
-  };
-  // 只有传递 body 时才设置 Content-Type
-  if (body !== undefined) {
-    headers['Content-Type'] = 'application/json';
-  }
-  const options = { method, headers };
-  if (body !== undefined) {
-    options.body = JSON.stringify(body);
-  }
-  const res = await fetch(url, options);
-  const data = await res.json();
-  if (!res.ok) {
-  const err = new Error(`Cloudflare API error (${res.status}): ${JSON.stringify(data)}`);
-  throw err;
-}
-  return data;
-}
-/**
- * 创建命名空间
- * @param {string} accountId
- * @param {string} token
- * @param {string} title 命名空间名称
- * @returns {Promise<object>} Cloudflare API 返回的结果
- */
-async function createNamespace(accountId, token, title) {
-  return apiRequest(
-    `accounts/${accountId}/storage/kv/namespaces`,
-    'POST',
-    { title },
-    token
-  );
-}
-/**
- * 列出所有命名空间
- * @param {string} accountId
- * @param {string} token
- * @param {number} [page=1] 页码，从 1 开始
- * @param {number} [per_page=50] 每页数量（最大 100）
- * @returns {Promise<object>}
- */
-async function listNamespaces(accountId, token, page = 1, per_page = 20) {
-  const params = new URLSearchParams();
-  params.set('page', `${page}`);
-  // @ts-ignore
-  params.set('per_page', Math.min(per_page, 100));
-  const path = `accounts/${accountId}/storage/kv/namespaces?${params.toString()}`;
-  return apiRequest(path, 'GET', undefined, token);
-}
-/**
- * 删除指定命名空间
- * @param {string} accountId
- * @param {string} token
- * @param {string} namespaceId
- * @returns {Promise<object>}
- */
-async function deleteNamespace(accountId, token, namespaceId) {
-  return apiRequest(
-    `accounts/${accountId}/storage/kv/namespaces/${namespaceId}`,
-    'DELETE',
-    undefined,
-    token
-  );
-}
-/**
- * 列出命名空间下的键
- * @param {string} accountId
- * @param {string} token
- * @param {string} namespaceId
- * @param {number|string} [limit]  返回数量上限
- * @param {string} [cursor]        分页游标
- * @param {string} [prefix]        键名前缀
- * @returns {Promise<object>}
- */
-async function listKeys(accountId, token, namespaceId, limit, cursor, prefix) {
-  let path = `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/keys`;
-  const params = new URLSearchParams();
-  if (limit) params.set('limit', `${limit}`);
-  if (cursor) params.set('cursor', cursor);
-  if (prefix) params.set('prefix', prefix);
-  params.set('include_metadata', 'true');
-  params.set('include_expiration', 'true');
-  path += '?' + params.toString();
-  return apiRequest(path, 'GET', undefined, token);
-}
-/**
- * 读取某个键的值（纯文本）
- * @param {string} accountId
- * @param {string} token
- * @param {string} namespaceId
- * @param {string} key
- * @returns {Promise<string>} 键对应的值
- */
-async function readKey(accountId, token, namespaceId, key) {
-  const path = `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`;
-  const url = `https://api.cloudflare.com/client/v4/${path}`;
-  const res = await fetch(url, {
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    const errData = await res.json().catch(() => null);
-    throw new Error(`Read key failed (${res.status}): ${JSON.stringify(errData)}`);
-  }
-  return res.text();
-}
-/**
- * 读取键的元数据
- * @param {string} accountId
- * @param {string} token
- * @param {string} namespaceId
- * @param {string} key
- * @returns {Promise<object>} 包含 metadata 的对象
- */
-async function readMetadata(accountId, token, namespaceId, key) {
-  return apiRequest(
-    `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/metadata/${encodeURIComponent(key)}`,
-    'GET',
-    undefined,
-    token
-  );
-}
-/**
- * 删除某个键
- * @param {string} accountId
- * @param {string} token
- * @param {string} namespaceId
- * @param {string} key
- * @returns {Promise<object>}
- */
-async function deleteKey(accountId, token, namespaceId, key) {
-  return apiRequest(
-    `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
-    'DELETE',
-    undefined,
-    token
-  );
-}
- /**
-     * 处理获取键请求
+    function errorResponse(err) {
+        const status = err.status || 500;
+        const message = status === 404 ? 'Not Found' : err.message;
+        return new Response(JSON.stringify({ error: message }), {
+            status,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+    /**
+     * api
+     * 请求
+     */
+    async function apiRequest(path, method, body, token, extraHeaders = {}) {
+        const url = `https://api.cloudflare.com/client/v4/${path}`;
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            ...extraHeaders,
+        };
+        // 只有传递 body 时才设置 Content-Type
+        if (body !== undefined) {
+            headers['Content-Type'] = 'application/json';
+        }
+        const options = { method, headers };
+        if (body !== undefined) {
+            options.body = JSON.stringify(body);
+        }
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) {
+            const err = new Error(`Cloudflare API error (${res.status}): ${JSON.stringify(data)}`);
+            throw err;
+        }
+        return data;
+    }
+    /**
+     * 创建命名空间
+     * @param {string} accountId
+     * @param {string} token
+     * @param {string} title 命名空间名称
+     * @returns {Promise<object>} Cloudflare API 返回的结果
+     */
+    async function createNamespace(accountId, token, title) {
+        return apiRequest(
+            `accounts/${accountId}/storage/kv/namespaces`,
+            'POST',
+            { title },
+            token
+        );
+    }
+    /**
+     * 列出所有命名空间
+     * @param {string} accountId
+     * @param {string} token
+     * @param {number} [page=1] 页码，从 1 开始
+     * @param {number} [per_page=50] 每页数量（最大 100）
+     * @returns {Promise<object>}
+     */
+    async function listNamespaces(accountId, token, page = 1, per_page = 20) {
+        const params = new URLSearchParams();
+        params.set('page', `${page}`);
+        // @ts-ignore
+        params.set('per_page', Math.min(per_page, 100));
+        const path = `accounts/${accountId}/storage/kv/namespaces?${params.toString()}`;
+        return apiRequest(path, 'GET', undefined, token);
+    }
+    /**
+     * 删除指定命名空间
+     * @param {string} accountId
+     * @param {string} token
+     * @param {string} namespaceId
+     * @returns {Promise<object>}
+     */
+    async function deleteNamespace(accountId, token, namespaceId) {
+        return apiRequest(
+            `accounts/${accountId}/storage/kv/namespaces/${namespaceId}`,
+            'DELETE',
+            undefined,
+            token
+        );
+    }
+    /**
+     * 列出命名空间下的键
+     * @param {string} accountId
+     * @param {string} token
+     * @param {string} namespaceId
+     * @param {number|string} [limit]  返回数量上限
+     * @param {string} [cursor]        分页游标
+     * @param {string} [prefix]        键名前缀
+     * @returns {Promise<object>}
+     */
+    async function listKeys(accountId, token, namespaceId, limit, cursor, prefix) {
+        let path = `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/keys`;
+        const params = new URLSearchParams();
+        if (limit) params.set('limit', `${limit}`);
+        if (cursor) params.set('cursor', cursor);
+        if (prefix) params.set('prefix', prefix);
+        params.set('include_metadata', 'true');
+        params.set('include_expiration', 'true');
+        path += '?' + params.toString();
+        return apiRequest(path, 'GET', undefined, token);
+    }
+    /**
+     * 读取某个键的值（纯文本）
+     * @param {string} accountId
+     * @param {string} token
+     * @param {string} namespaceId
+     * @param {string} key
+     * @returns {Promise<string>} 键对应的值
+     */
+    async function readKey(accountId, token, namespaceId, key) {
+        const path = `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`;
+        const url = `https://api.cloudflare.com/client/v4/${path}`;
+        const res = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!res.ok) {
+            const errData = await res.json().catch(() => null);
+            throw new Error(`Read key failed (${res.status}): ${JSON.stringify(errData)}`);
+        }
+        return res.text();
+    }
+    /**
+     * 读取键的元数据
+     * @param {string} accountId
+     * @param {string} token
+     * @param {string} namespaceId
+     * @param {string} key
+     * @returns {Promise<object>} 包含 metadata 的对象
+     */
+    async function readMetadata(accountId, token, namespaceId, key) {
+        return apiRequest(
+            `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/metadata/${encodeURIComponent(key)}`,
+            'GET',
+            undefined,
+            token
+        );
+    }
+    /**
+     * 删除某个键
+     * @param {string} accountId
+     * @param {string} token
+     * @param {string} namespaceId
+     * @param {string} key
+     * @returns {Promise<object>}
+     */
+    async function deleteKey(accountId, token, namespaceId, key) {
+        return apiRequest(
+            `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+            'DELETE',
+            undefined,
+            token
+        );
+    }
+    /**
+        * 处理获取键请求
+        * @param {string} accountId
+        * @param {string} apiToken
+        * @param {string} namespaceId
+        * @param {string} key
+        * @returns Promise<Response>
+        */
+    async function handleReadKey(accountId, apiToken, namespaceId, key) {
+        const { data, metadata } = await readKeyBinary(accountId, apiToken, namespaceId, key);
+        try {
+            // 尝试以 UTF-8 严格模式解码，若成功则作为文本返回
+            const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(data);
+            return new Response(text, {
+                headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+            });
+        } catch (e) {
+            // 解码失败 → 二进制内容，返回 415 状态码
+            return new Response(JSON.stringify({
+                error: 'Binary content',
+                message: 'This key contains binary data. Use the /stream endpoint to download.'
+            }), {
+                status: 415,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+    }
+    /**
+     * 将 ArrayBuffer 转换为 Base64 字符串
+     */
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+    }
+    /**
+     * 写入单个键值（统一使用批量接口 + Base64 编码）
+     * @param {string} accountId
+     * @param {string} token
+     * @param {string} namespaceId
+     * @param {string} key
+     * @param {string|Blob} value 要存储的内容（字符串或 Blob）
+     * @param {object} [metadata] 元数据对象（可选）
+     * @param {number} [expiration] 绝对过期时间（Unix 秒）
+     * @param {number} [expirationTtl] 相对过期时间（秒）
+     */
+    async function writeKeyBase64(accountId, token, namespaceId, key, value, metadata, expiration, expirationTtl) {
+        // 构造批量数组（只有一个元素）
+        const kvPair = {
+            key: key,
+        };
+
+        // 处理 value：字符串 或 Blob -> Base64
+        if (typeof value === 'string') {
+            kvPair.value = value;
+            // 字符串不需要 base64 标记
+        } else if (value instanceof Blob) {
+            // 异步读取 Blob 为 ArrayBuffer，再转为 Base64
+            const arrayBuffer = await value.arrayBuffer();
+            kvPair.value = arrayBufferToBase64(arrayBuffer);
+            kvPair.base64 = true;      // 告诉 Cloudflare 这是 Base64 编码的数据
+        } else {
+            throw new Error('Unsupported value type, only string or Blob');
+        }
+
+        // 附加过期时间与元数据
+        if (expiration !== undefined) kvPair.expiration = expiration;
+        if (expirationTtl !== undefined) kvPair.expiration_ttl = expirationTtl;
+        if (metadata !== undefined) kvPair.metadata = metadata;
+
+        // 调用真正的批量接口
+        return bulkWriteKeys(accountId, token, namespaceId, [kvPair]);
+    }
+    /**
+     * 写入键值（支持字符串或 Blob）
+     * @param {string} accountId
+     * @param {string} token
+     * @param {string} namespaceId
+     * @param {string} key
+     * @param {string|Blob} value 要存储的内容
+     * @param {object} [metadata] 元数据对象（可选）
+     * @param {number} [expiration] 绝对过期时间（Unix 秒）
+     * @param {number} [expirationTtl] 相对过期时间（秒）
+     */
+    async function writeKey(accountId, token, namespaceId, key, value, metadata, expiration, expirationTtl) {
+        const path = `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`;
+        const url = new URL(`https://api.cloudflare.com/client/v4/${path}`);
+
+        // 查询参数：过期时间、元数据
+        if (expiration !== undefined) url.searchParams.append('expiration', `${expiration}`);
+        if (expirationTtl !== undefined) url.searchParams.append('expiration_ttl', `${expirationTtl}`);
+        if (metadata !== undefined) url.searchParams.append('metadata', JSON.stringify(metadata));
+
+        // 确定 Content-Type 和请求体
+        let body, contentType;
+        if (typeof value === 'string') {
+            body = value;
+            contentType = 'text/plain;charset=utf-8';
+        } else if (value instanceof Blob) {
+            body = value;
+            contentType = value.type || 'application/octet-stream';
+        } else {
+            throw new Error('Unsupported value type');
+        }
+
+        const res = await fetch(url.toString(), {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': contentType,
+            },
+            body: body,
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => null);
+            const err = new Error(`Write key failed (${res.status}): ${JSON.stringify(errData)}`);
+            throw err;
+        }
+        return res.json();
+    }
+    /**
+     * 批量写入多个键值对（支持 Base64）
+     * @param {string} accountId
+     * @param {string} token
+     * @param {string} namespaceId
+     * @param {Array<object>} kvList 每个元素包含 key, value, base64?, metadata?, expiration?, expiration_ttl?
+     */
+    async function bulkWriteKeys(accountId, token, namespaceId, kvList) {
+        const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/bulk`;
+
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(kvList),
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            const err = new Error(`Bulk write failed (${response.status}): ${errText}`);
+            throw err;
+        }
+        return response.json();
+    }
+    /**
+     * 读取键的原始二进制内容
+     * @param {string} accountId
+     * @param {string} token
+     * @param {string} namespaceId
+     * @param {string} key
+     * @returns {Promise<{data: ArrayBuffer, metadata: object|null}>}
+     */
+    async function readKeyBinary(accountId, token, namespaceId, key) {
+        const path = `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`;
+        const url = `https://api.cloudflare.com/client/v4/${path}`;
+        const res = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!res.ok) {
+            const errData = await res.json().catch(() => null);
+            const err = new Error(`Read key failed (${res.status}): ${JSON.stringify(errData)}`);
+            throw err;
+        }
+        const data = await res.arrayBuffer();
+
+        // 获取元数据
+        let metadata = null;
+        try {
+            const metaRes = await apiRequest(
+                `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/metadata/${encodeURIComponent(key)}`,
+                'GET',
+                undefined,
+                token
+            );
+            metadata = metaRes.result || null;
+        } catch (e) {
+            // 元数据获取失败不影响主流程
+            console.warn('Failed to fetch metadata:', e);
+        }
+        return { data, metadata };
+    }
+    /**
+     * 处理获取键二进制值请求（下载流）
      * @param {string} accountId
      * @param {string} apiToken
      * @param {string} namespaceId
      * @param {string} key
      * @returns Promise<Response>
      */
- async function handleReadKey(accountId,apiToken,namespaceId,key){
-     const { data, metadata } = await readKeyBinary(accountId, apiToken, namespaceId, key);
-          try {
-            // 尝试以 UTF-8 严格模式解码，若成功则作为文本返回
-            const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(data);
-            return new Response(text, {
-              headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-            });
-          } catch (e) {
-            // 解码失败 → 二进制内容，返回 415 状态码
-            return new Response(JSON.stringify({
-              error: 'Binary content',
-              message: 'This key contains binary data. Use the /stream endpoint to download.'
-            }), {
-              status: 415,
-              headers: { 'Content-Type': 'application/json' }
-            });
-          }
- }
-/**
- * 将 ArrayBuffer 转换为 Base64 字符串
- */
-function arrayBufferToBase64(buffer) {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-/**
- * 写入单个键值（统一使用批量接口 + Base64 编码）
- * @param {string} accountId
- * @param {string} token
- * @param {string} namespaceId
- * @param {string} key
- * @param {string|Blob} value 要存储的内容（字符串或 Blob）
- * @param {object} [metadata] 元数据对象（可选）
- * @param {number} [expiration] 绝对过期时间（Unix 秒）
- * @param {number} [expirationTtl] 相对过期时间（秒）
- */
-async function writeKeyBase64(accountId, token, namespaceId, key, value, metadata, expiration, expirationTtl) {
-  // 构造批量数组（只有一个元素）
-  const kvPair = {
-    key: key,
-  };
+    async function handleReadKeyStream(accountId, apiToken, namespaceId, key) {
+        const { data, metadata } = await readKeyBinary(accountId, apiToken, namespaceId, key);
 
-  // 处理 value：字符串 或 Blob -> Base64
-  if (typeof value === 'string') {
-    kvPair.value = value;
-    // 字符串不需要 base64 标记
-  } else if (value instanceof Blob) {
-    // 异步读取 Blob 为 ArrayBuffer，再转为 Base64
-    const arrayBuffer = await value.arrayBuffer();
-    kvPair.value = arrayBufferToBase64(arrayBuffer);
-    kvPair.base64 = true;      // 告诉 Cloudflare 这是 Base64 编码的数据
-  } else {
-    throw new Error('Unsupported value type, only string or Blob');
-  }
+        // 从元数据中获取 MIME 类型和文件名（优先使用元数据存储的值）
+        const mimeType = (metadata && metadata.contentType) ? metadata.contentType : 'application/octet-stream';
+        // 文件名：若元数据中有 filename 则使用，否则回退到 key
+        const filename = (metadata && metadata.filename) ? metadata.filename : key;
 
-  // 附加过期时间与元数据
-  if (expiration !== undefined) kvPair.expiration = expiration;
-  if (expirationTtl !== undefined) kvPair.expiration_ttl = expirationTtl;
-  if (metadata !== undefined) kvPair.metadata = metadata;
-
-  // 调用真正的批量接口
-  return bulkWriteKeys(accountId, token, namespaceId, [kvPair]);
-}
-/**
- * 写入键值（支持字符串或 Blob）
- * @param {string} accountId
- * @param {string} token
- * @param {string} namespaceId
- * @param {string} key
- * @param {string|Blob} value 要存储的内容
- * @param {object} [metadata] 元数据对象（可选）
- * @param {number} [expiration] 绝对过期时间（Unix 秒）
- * @param {number} [expirationTtl] 相对过期时间（秒）
- */
-async function writeKey(accountId, token, namespaceId, key, value, metadata, expiration, expirationTtl) {
-  const path = `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`;
-  const url = new URL(`https://api.cloudflare.com/client/v4/${path}`);
-
-  // 查询参数：过期时间、元数据
-  if (expiration !== undefined) url.searchParams.append('expiration', `${expiration}`);
-  if (expirationTtl !== undefined) url.searchParams.append('expiration_ttl', `${expirationTtl}`);
-  if (metadata !== undefined) url.searchParams.append('metadata', JSON.stringify(metadata));
-
-  // 确定 Content-Type 和请求体
-  let body, contentType;
-  if (typeof value === 'string') {
-    body = value;
-    contentType = 'text/plain;charset=utf-8';
-  } else if (value instanceof Blob) {
-    body = value;
-    contentType = value.type || 'application/octet-stream';
-  } else {
-    throw new Error('Unsupported value type');
-  }
-
-  const res = await fetch(url.toString(), {
-    method: 'PUT',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': contentType,
-    },
-    body: body,
-  });
-
-  if (!res.ok) {
-  const errData = await res.json().catch(() => null);
-  const err = new Error(`Write key failed (${res.status}): ${JSON.stringify(errData)}`);
-  throw err;
-}
-  return res.json();
-}
-/**
- * 批量写入多个键值对（支持 Base64）
- * @param {string} accountId
- * @param {string} token
- * @param {string} namespaceId
- * @param {Array<object>} kvList 每个元素包含 key, value, base64?, metadata?, expiration?, expiration_ttl?
- */
-async function bulkWriteKeys(accountId, token, namespaceId, kvList) {
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/bulk`;
-
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(kvList),
-  });
-
-  if (!response.ok) {
-  const errText = await response.text();
-  const err = new Error(`Bulk write failed (${response.status}): ${errText}`);
-  throw err;
-}
-  return response.json();
-}
-/**
- * 读取键的原始二进制内容
- * @param {string} accountId
- * @param {string} token
- * @param {string} namespaceId
- * @param {string} key
- * @returns {Promise<{data: ArrayBuffer, metadata: object|null}>}
- */
-async function readKeyBinary(accountId, token, namespaceId, key) {
-  const path = `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`;
-  const url = `https://api.cloudflare.com/client/v4/${path}`;
-  const res = await fetch(url, {
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
-  if (!res.ok) {
-  const errData = await res.json().catch(() => null);
-  const err = new Error(`Read key failed (${res.status}): ${JSON.stringify(errData)}`);
-  throw err;
-}
-  const data = await res.arrayBuffer();
-
-  // 获取元数据
-  let metadata = null;
-  try {
-    const metaRes = await apiRequest(
-      `accounts/${accountId}/storage/kv/namespaces/${namespaceId}/metadata/${encodeURIComponent(key)}`,
-      'GET',
-      undefined,
-      token
-    );
-    metadata = metaRes.result || null;
-  } catch (e) {
-    // 元数据获取失败不影响主流程
-    console.warn('Failed to fetch metadata:', e);
-  }
-  return { data, metadata };
-}
-/**
- * 处理获取键二进制值请求（下载流）
- * @param {string} accountId
- * @param {string} apiToken
- * @param {string} namespaceId
- * @param {string} key
- * @returns Promise<Response>
- */
-async function handleReadKeyStream(accountId, apiToken, namespaceId, key) {
-  const { data, metadata } = await readKeyBinary(accountId, apiToken, namespaceId, key);
-
-  // 从元数据中获取 MIME 类型和文件名（优先使用元数据存储的值）
-  const mimeType = (metadata && metadata.contentType) ? metadata.contentType : 'application/octet-stream';
-  // 文件名：若元数据中有 filename 则使用，否则回退到 key
-  const filename = (metadata && metadata.filename) ? metadata.filename : key;
-
-  // 对文件名进行 RFC 5987 编码（支持非ASCII字符），简单起见使用 encodeURIComponent
-  const encodedFilename = encodeURIComponent(filename);
-  return new Response(data, {
-    headers: {
-      'Content-Type': mimeType,
-      'Content-Length': data.byteLength.toString(),
-      'Content-Disposition': `attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`
-    }
-  });
-}
-async function handleWriteKey(accountId, apiToken, namespaceId, key, request) {
-  const contentType = request.headers.get('Content-Type') || '';
-  const url = new URL(request.url);
-  const searchParams = url.searchParams;
-  
-  let value, metadata, expiration, expirationTtl;
-
-  // 检查是否为 Base64 模式（通过查询参数 ?base64=1）
-  const isBase64 = searchParams.get('base64') === '1' || searchParams.get('base64') === 'true';
-
-  if (contentType.includes('multipart/form-data')) {
-    // 原有 multipart 处理逻辑（略作调整，支持 base64 字段）
-    const formData = await request.formData();
-    
-    // 如果表单中显式提供了 base64 字段，则优先解码该字段
-    const base64Field = formData.get('base64');
-    if (base64Field && typeof base64Field === 'string') {
-      try {
-        const binaryString = atob(base64Field);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        value = new Blob([bytes]);
-      } catch (e) {
-        return new Response('Invalid base64 content', { status: 400 });
-      }
-    } else {
-      value = formData.get('value');
-    }
-
-    // 处理元数据（同上）
-    let metaObj = {};
-    const metaStr = formData.get('metadata');
-    if (metaStr) {
-      try {
-        metaObj = JSON.parse(metaStr);
-      } catch (e) {
-        return new Response('Invalid metadata JSON', { status: 400 });
-      }
-    }
-
-    if (value && typeof value === 'object' && value.name !== undefined) {
-      if (!metaObj.filename) metaObj.filename = value.name;
-      if (!metaObj.contentType && value.type) metaObj.contentType = value.type;
-    }
-    metadata = Object.keys(metaObj).length ? metaObj : undefined;
-
-    const expStr = formData.get('expiration');
-    if (expStr) expiration = parseInt(expStr, 10);
-    const ttlStr = formData.get('expiration_ttl');
-    if (ttlStr) expirationTtl = parseInt(ttlStr, 10);
-  } else {
-    // 非表单提交：统一处理文本/二进制 + Base64 解码
-    if (isBase64) {
-      // 将整个请求体视为 Base64 字符串，解码为二进制 Blob
-      const base64Text = await request.text();
-      try {
-        const binaryString = atob(base64Text);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        value = new Blob([bytes]);
-      } catch (e) {
-        return new Response('Invalid base64 body', { status: 400 });
-      }
-    } else {
-      // 原有逻辑（此处保留你之前的 isText 判断，但你已经强制设为 false）
-      const isText = false; // 可根据需要重新启用判断
-      if (!isText) {
-        value = await request.blob();
-      } else {
-        value = await request.text();
-      }
-    }
-
-    // 过期参数可从查询参数获取
-    if (searchParams.has('expiration')) expiration = parseInt(searchParams.get('expiration'), 10);
-    if (searchParams.has('expiration_ttl')) expirationTtl = parseInt(searchParams.get('expiration_ttl'), 10);
-  }
-
-  if (value === null || value === undefined) {
-    return new Response('Missing "value" field', { status: 400 });
-  }
-
-  const data = await writeKey(accountId, apiToken, namespaceId, key, value, metadata, expiration, expirationTtl);
-  return new Response(JSON.stringify(data), {
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-/**
- * 批量写入 KV 键值对
- * 请求体应为 JSON 数组，每个元素包含：
- *   - key: string (必填)
- *   - value: string (文本) 或 base64 编码的字符串 (若 base64=true)
- *   - base64?: boolean (可选，指示 value 是否为 base64)
- *   - metadata?: object (可选)
- *   - expiration?: number (可选，绝对过期时间，Unix 秒)
- *   - expiration_ttl?: number (可选，相对过期秒数)
- * 
- * 示例请求体：
- * [
- *   { "key": "doc1", "value": "hello world" },
- *   { "key": "img1", "value": "iVBORw0KGgo...", "base64": true, "metadata": { "contentType": "image/png" } }
- * ]
- */
-async function handleBulkWrite(accountId, token, namespaceId, request) {
-  try {
-    const kvList = await request.json();
-    if (!Array.isArray(kvList)) {
-      return new Response(JSON.stringify({ error: 'Request body must be a JSON array' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // 验证每个元素至少包含 key 和 value
-    for (let i = 0; i < kvList.length; i++) {
-      const item = kvList[i];
-      if (!item.key || item.value === undefined) {
-        return new Response(JSON.stringify({ error: `Item at index ${i} missing 'key' or 'value'` }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
+        // 对文件名进行 RFC 5987 编码（支持非ASCII字符），简单起见使用 encodeURIComponent
+        const encodedFilename = encodeURIComponent(filename);
+        return new Response(data, {
+            headers: {
+                'Content-Type': mimeType,
+                'Content-Length': data.byteLength.toString(),
+                'Content-Disposition': `attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`
+            }
         });
-      }
-      // 如果标记为 base64，需要将 value 解码为二进制 Blob，以便 bulkWriteKeys 内部处理
-      if (item.base64 === true && typeof item.value === 'string') {
-        try {
-          const binaryString = atob(item.value);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let j = 0; j < binaryString.length; j++) {
-            bytes[j] = binaryString.charCodeAt(j);
-          }
-          // 替换为 Blob 对象
-          item.value = new Blob([bytes]);
-          // 删除 base64 标记，因为 bulkWriteKeys 期望 blob 对象时不需要该字段
-          delete item.base64;
-        } catch (e) {
-          return new Response(JSON.stringify({ error: `Invalid base64 at index ${i}: ${e.message}` }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-      }
     }
+    async function handleWriteKey(accountId, apiToken, namespaceId, key, request) {
+        const contentType = request.headers.get('Content-Type') || '';
+        const url = new URL(request.url);
+        const searchParams = url.searchParams;
 
-    // 调用已有的批量写入函数
-    const result = await bulkWriteKeys(accountId, token, namespaceId, kvList);
-    return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-}
+        let value, metadata, expiration, expirationTtl;
+
+        // 检查是否为 Base64 模式（通过查询参数 ?base64=1）
+        const isBase64 = searchParams.get('base64') === '1' || searchParams.get('base64') === 'true';
+
+        if (contentType.includes('multipart/form-data')) {
+            // 原有 multipart 处理逻辑（略作调整，支持 base64 字段）
+            const formData = await request.formData();
+
+            // 如果表单中显式提供了 base64 字段，则优先解码该字段
+            const base64Field = formData.get('base64');
+            if (base64Field && typeof base64Field === 'string') {
+                try {
+                    const binaryString = atob(base64Field);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    value = new Blob([bytes]);
+                } catch (e) {
+                    return new Response('Invalid base64 content', { status: 400 });
+                }
+            } else {
+                value = formData.get('value');
+            }
+
+            // 处理元数据（同上）
+            let metaObj = {};
+            const metaStr = formData.get('metadata');
+            if (metaStr) {
+                try {
+                    metaObj = JSON.parse(metaStr);
+                } catch (e) {
+                    return new Response('Invalid metadata JSON', { status: 400 });
+                }
+            }
+
+            if (value && typeof value === 'object' && value.name !== undefined) {
+                if (!metaObj.filename) metaObj.filename = value.name;
+                if (!metaObj.contentType && value.type) metaObj.contentType = value.type;
+            }
+            metadata = Object.keys(metaObj).length ? metaObj : undefined;
+
+            const expStr = formData.get('expiration');
+            if (expStr) expiration = parseInt(expStr, 10);
+            const ttlStr = formData.get('expiration_ttl');
+            if (ttlStr) expirationTtl = parseInt(ttlStr, 10);
+        } else {
+            // 非表单提交：统一处理文本/二进制 + Base64 解码
+            if (isBase64) {
+                // 将整个请求体视为 Base64 字符串，解码为二进制 Blob
+                const base64Text = await request.text();
+                try {
+                    const binaryString = atob(base64Text);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    value = new Blob([bytes]);
+                } catch (e) {
+                    return new Response('Invalid base64 body', { status: 400 });
+                }
+            } else {
+                // 原有逻辑（此处保留你之前的 isText 判断，但你已经强制设为 false）
+                const isText = false; // 可根据需要重新启用判断
+                if (!isText) {
+                    value = await request.blob();
+                } else {
+                    value = await request.text();
+                }
+            }
+
+            // 过期参数可从查询参数获取
+            if (searchParams.has('expiration')) expiration = parseInt(searchParams.get('expiration'), 10);
+            if (searchParams.has('expiration_ttl')) expirationTtl = parseInt(searchParams.get('expiration_ttl'), 10);
+        }
+
+        if (value === null || value === undefined) {
+            return new Response('Missing "value" field', { status: 400 });
+        }
+
+        const data = await writeKey(accountId, apiToken, namespaceId, key, value, metadata, expiration, expirationTtl);
+        return new Response(JSON.stringify(data), {
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+    /**
+     * 批量写入 KV 键值对
+     * 请求体应为 JSON 数组，每个元素包含：
+     *   - key: string (必填)
+     *   - value: string (文本) 或 base64 编码的字符串 (若 base64=true)
+     *   - base64?: boolean (可选，指示 value 是否为 base64)
+     *   - metadata?: object (可选)
+     *   - expiration?: number (可选，绝对过期时间，Unix 秒)
+     *   - expiration_ttl?: number (可选，相对过期秒数)
+     * 
+     * 示例请求体：
+     * [
+     *   { "key": "doc1", "value": "hello world" },
+     *   { "key": "img1", "value": "iVBORw0KGgo...", "base64": true, "metadata": { "contentType": "image/png" } }
+     * ]
+     */
+    async function handleBulkWrite(accountId, token, namespaceId, request) {
+        try {
+            const kvList = await request.json();
+            if (!Array.isArray(kvList)) {
+                return new Response(JSON.stringify({ error: 'Request body must be a JSON array' }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+
+            // 验证每个元素至少包含 key 和 value
+            for (let i = 0; i < kvList.length; i++) {
+                const item = kvList[i];
+                if (!item.key || item.value === undefined) {
+                    return new Response(JSON.stringify({ error: `Item at index ${i} missing 'key' or 'value'` }), {
+                        status: 400,
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                }
+                // 如果标记为 base64，需要将 value 解码为二进制 Blob，以便 bulkWriteKeys 内部处理
+                if (item.base64 === true && typeof item.value === 'string') {
+                    try {
+                        const binaryString = atob(item.value);
+                        const bytes = new Uint8Array(binaryString.length);
+                        for (let j = 0; j < binaryString.length; j++) {
+                            bytes[j] = binaryString.charCodeAt(j);
+                        }
+                        // 替换为 Blob 对象
+                        item.value = new Blob([bytes]);
+                        // 删除 base64 标记，因为 bulkWriteKeys 期望 blob 对象时不需要该字段
+                        delete item.base64;
+                    } catch (e) {
+                        return new Response(JSON.stringify({ error: `Invalid base64 at index ${i}: ${e.message}` }), {
+                            status: 400,
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                    }
+                }
+            }
+
+            // 调用已有的批量写入函数
+            const result = await bulkWriteKeys(accountId, token, namespaceId, kvList);
+            return new Response(JSON.stringify(result), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        } catch (err) {
+            return new Response(JSON.stringify({ error: err.message }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+    }
     // 匹配路由
     for (const route of routes) {
-      if (route.method !== method) continue;
-      const match = route.pattern.exec({ pathname });
-      if (match) {
-        try {
-          const result = await route.handler(match, request);
-          // 如果 handler 返回的是 Response 对象，直接返回；否则包装成 JSON 响应
-          return result instanceof Response ? result : jsonResponse(result,{status:200});
-        } catch (err) {
-          return new Response(`Server Error: ${err.message}`, { status: 500 });
+        if (route.method !== method) continue;
+        const match = route.pattern.exec({ pathname });
+        if (match) {
+            try {
+                const result = await route.handler(match, request);
+                // 如果 handler 返回的是 Response 对象，直接返回；否则包装成 JSON 响应
+                return result instanceof Response ? result : jsonResponse(result, { status: 200 });
+            } catch (err) {
+                return new Response(`Server Error: ${err.message}`, { status: 500 });
+            }
         }
-      }
     }
 
     // 无匹配路由
@@ -6343,14 +6527,14 @@ td button{margin-right:.25rem}
         });
     }*/
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/list'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/list'
+    });
 }
 // kv批量写入html /kv/bulk
-function handleKVBulkHtml(acc, logined){
-    const html =`
+function handleKVBulkHtml(acc, logined) {
+    const html = `
     <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -6702,10 +6886,10 @@ function handleKVBulkHtml(acc, logined){
         });
     }*/
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/list'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/list'
+    });
 }
 //=================wtc=====================
 // wtc日志查询/api/wtc
@@ -7777,10 +7961,10 @@ function handleWtcPage(acc, logined) {
         });
     }*/
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/list'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/list'
+    });
 }
 //===============binding===================
 // 绑定管理/api/bindings
@@ -8821,10 +9005,10 @@ async function doDeleteSecret(workerName, secretName) {
         });
     }*/
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/list'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/list'
+    });
 }
 //===============deployment==================
 // 版本部署管理/api/deployment
@@ -9193,10 +9377,10 @@ function handleDeploymentPage(acc, logined) {
         });
     }*/
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/list'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/list'
+    });
 }
 //================routes===================
 // 路由管理/api/routes
@@ -9330,7 +9514,7 @@ async function getRoutes(apiHeaders, corsHeaders) {
             errors: errors.length > 0 ? errors : undefined,
             messages: [{
                 message: `Fetched routes from ${allRoutes.length} zones`,
-            }, ],
+            },],
         }), {
             headers: corsHeaders,
         });
@@ -9786,10 +9970,10 @@ function handleRoutesPage(acc, logined) {
         });
     }*/
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/list'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/list'
+    });
 }
 //================setting==================
 // worker相关设置/api/setting
@@ -10381,7 +10565,7 @@ function handleSettingPage(acc, logined) {
         </body>
         </html>
         `;
-        
+
     /*if (logined) {
         return buildHtmlResponse(html, acc, {
             littleNav: false,
@@ -10402,10 +10586,10 @@ function handleSettingPage(acc, logined) {
         });
     }*/
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/list'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/list'
+    });
 }
 // 新建前端 /create
 function handleCreatePage(acc, logined) {
@@ -10503,10 +10687,10 @@ function handleCreatePage(acc, logined) {
         });
     }*/
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/list'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/list'
+    });
 }
 //=================curl===================
 // cURL代理/api/curl
@@ -10568,7 +10752,7 @@ async function handleCurl(request, token, url) {
             });
         }
         // 准备请求头
-        const headers = new Headers(/** @type {Record<string, string>} */ (parsed.headers || {}));
+        const headers = new Headers(/** @type {Record<string, string>} */(parsed.headers || {}));
         // 如果勾选了附加token，添加认证头
         if (addToken) {
             // 使用Bearer token认证
@@ -10653,7 +10837,7 @@ async function handleCurlRaw(request, token) {
             return errHtml(400, '只能代理到api.cloudflare.com域名的请求', '/curl', true);
         }
         // 准备请求头
-        const headers = new Headers(/** @type {Record<string, string>} */ (parsed.headers || {}));
+        const headers = new Headers(/** @type {Record<string, string>} */(parsed.headers || {}));
         // 如果勾选了附加token，添加认证头
         if (addToken) {
             headers.set('Authorization', `Bearer ${token}`);
@@ -10971,10 +11155,10 @@ function handleCurlPage(acc, logined) {
         });
     }*/
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/list'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/list'
+    });
 }
 //================graphQL=================
 // worker 分析数据/api/graphql
@@ -11018,12 +11202,12 @@ async function handleGraphQL(request, url, accountId, token) {
             JSON.stringify({
                 error: 'Missing required parameters: scriptName, start, end'
             }), {
-                status: 400,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-            }
+            status: 400,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+        }
         );
     }
 
@@ -11167,12 +11351,12 @@ async function handleGraphQL(request, url, accountId, token) {
                 success: false,
                 error: error.message
             }), {
-                status: 500,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-            }
+            status: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+        }
         );
     }
 }
@@ -12066,10 +12250,10 @@ applyHorizontalScroll('cpuScrollWrapper', 'cpuChart', cpuChartInstance, pointsCo
         });
     }*/
     return buildHtmlResponse(html, acc, {
-            littleNav: false,
-            errorHandler: errHtml,
-            homeUrl: '/list'
-        });
+        littleNav: false,
+        errorHandler: errHtml,
+        homeUrl: '/list'
+    });
 }
 
 //==================end====================
